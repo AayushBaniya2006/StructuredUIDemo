@@ -12,8 +12,8 @@
     pdfSource?: string;
   } = $props();
 
-  let containerEl: HTMLDivElement;
-  let canvasEl: HTMLCanvasElement;
+  let containerEl = $state<HTMLDivElement>(undefined!);
+  let canvasEl = $state<HTMLCanvasElement>(undefined!);
   let pdfDoc: PDFDocument | null = $state(null);
   let currentPageObj: PDFPage | null = $state(null);
   let canvasWidth = $state(0);

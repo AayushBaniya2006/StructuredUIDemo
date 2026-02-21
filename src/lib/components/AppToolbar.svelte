@@ -19,7 +19,7 @@
   const unsubStat = issuesStore.statusFilter.subscribe((v) => (statusFilter = v));
   onDestroy(() => { unsubViewer(); unsubSev(); unsubStat(); });
 
-  let fileInput: HTMLInputElement;
+  let fileInput = $state<HTMLInputElement>(undefined!);
 
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
