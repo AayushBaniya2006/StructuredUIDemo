@@ -1,0 +1,222 @@
+import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import type { QACriterion, Issue, IssueSeverity, IssueCategory, AnalysisResponse } from '$lib/types';
+import { env } from '$env/dynamic/private';
+
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+const QA_CRITERIA = [
+	{ id: 'EQ', name: 'Equipment/Element Labels', description: 'All major equipment, rooms, and elements are labeled' },
+	{ id: 'DIM', name: 'Dimension Strings', description: 'Dimension lines are present and complete' },
+	{ id: 'TB', name: 'Title Block & Scale', description: 'Title block present with sheet number, scale indicated' },
+	{ id: 'FS', name: 'Fire Safety Markings', description: 'Fire exits, fire-rated assemblies, extinguishers marked' },
+	{ id: 'SYM', name: 'Symbol Consistency', description: 'Symbols match legend, no undefined symbols' },
+	{ id: 'ANN', name: 'Annotations & Notes', description: 'General notes, callouts, and references present' },
+	{ id: 'CRD', name: 'Coordination Markers', description: 'Grid lines, column markers, reference bubbles present' },
+	{ id: 'CLR', name: 'Clearance & Accessibility', description: 'ADA clearances, door swings, egress paths shown' },
+];
+
+function buildPrompt(pageNumber: number): string {
+	const criteriaList = QA_CRITERIA.map(
+		(c) => `- ${c.id}: ${c.name} — ${c.description}`
+	).join('\n');
+
+	return `You are a construction QA/QC reviewer analyzing a blueprint page.
+
+Evaluate this construction drawing (page ${pageNumber}) against these criteria:
+${criteriaList}
+
+For each criterion, determine:
+- "pass" if the requirement is met
+- "fail" if the requirement is NOT met (there's a deficiency)
+- "not-applicable" if the criterion doesn't apply to this page type
+
+For each FAILED criterion, identify specific issues with bounding boxes showing where the problem is on the drawing.
+
+Return ONLY valid JSON in this exact format:
+{
+  "criteria": [
+    {
+      "id": "EQ-${pageNumber}",
+      "criterionKey": "EQ",
+      "name": "Equipment/Element Labels",
+      "result": "pass" | "fail" | "not-applicable",
+      "summary": "Brief explanation of finding"
+    }
+  ],
+  "issues": [
+    {
+      "title": "Short issue title",
+      "description": "Detailed description of the issue",
+      "severity": "high" | "medium" | "low",
+      "category": "clash" | "missing-label" | "code-violation" | "clearance",
+      "criterionKey": "EQ",
+      "box_2d": [ymin, xmin, ymax, xmax]
+    }
+  ]
+}
+
+IMPORTANT:
+- box_2d coordinates are normalized 0-1000 (0=top-left, 1000=bottom-right)
+- Only include issues for FAILED criteria
+- Be specific about what's missing or wrong
+- Severity: high=safety/code violation, medium=missing info, low=minor annotation gap`;
+}
+
+type GeminiIssue = {
+	title: string;
+	description: string;
+	severity: string;
+	category: string;
+	criterionKey: string;
+	box_2d: [number, number, number, number];
+};
+
+type GeminiCriterion = {
+	id: string;
+	criterionKey: string;
+	name: string;
+	result: string;
+	summary: string;
+};
+
+type GeminiPageResult = {
+	criteria: GeminiCriterion[];
+	issues: GeminiIssue[];
+};
+
+function convertBbox(box: [number, number, number, number]) {
+	const [ymin, xmin, ymax, xmax] = box;
+	return {
+		x: Math.max(0, Math.min(1, xmin / 1000)),
+		y: Math.max(0, Math.min(1, ymin / 1000)),
+		width: Math.max(0, Math.min(1, (xmax - xmin) / 1000)),
+		height: Math.max(0, Math.min(1, (ymax - ymin) / 1000)),
+	};
+}
+
+const VALID_SEVERITIES = new Set(['high', 'medium', 'low']);
+const VALID_CATEGORIES = new Set(['clash', 'missing-label', 'code-violation', 'clearance']);
+
+async function analyzePage(
+	pageNumber: number,
+	imageBase64: string,
+	apiKey: string
+): Promise<GeminiPageResult> {
+	// Strip data URL prefix if present
+	const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+
+	const body = {
+		contents: [
+			{
+				parts: [
+					{ text: buildPrompt(pageNumber) },
+					{
+						inline_data: {
+							mime_type: 'image/png',
+							data: base64Data,
+						},
+					},
+				],
+			},
+		],
+		generationConfig: {
+			response_mime_type: 'application/json',
+			temperature: 0.2,
+		},
+	};
+
+	const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+
+	if (!res.ok) {
+		const errText = await res.text();
+		throw new Error(`Gemini API error (${res.status}): ${errText}`);
+	}
+
+	const data = await res.json();
+	const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+	if (!text) throw new Error('No text in Gemini response');
+
+	return JSON.parse(text) as GeminiPageResult;
+}
+
+export const POST: RequestHandler = async ({ request }) => {
+	const apiKey = env.GEMINI_API_KEY;
+	if (!apiKey) {
+		throw error(500, 'GEMINI_API_KEY is not configured. Set it in your .env file.');
+	}
+
+	const { pages } = (await request.json()) as {
+		pages: { pageNumber: number; image: string }[];
+	};
+
+	if (!pages || !Array.isArray(pages) || pages.length === 0) {
+		throw error(400, 'Request must include a non-empty "pages" array.');
+	}
+
+	const allCriteria: QACriterion[] = [];
+	const allIssues: Issue[] = [];
+	let issueCounter = 1;
+
+	for (const page of pages) {
+		try {
+			const result = await analyzePage(page.pageNumber, page.image, apiKey);
+
+			// Convert criteria
+			for (const c of result.criteria) {
+				const validResult = ['pass', 'fail', 'not-applicable'].includes(c.result)
+					? (c.result as QACriterion['result'])
+					: 'not-applicable';
+
+				allCriteria.push({
+					id: c.id || `${c.criterionKey}-${page.pageNumber}`,
+					name: c.name,
+					description: QA_CRITERIA.find((q) => q.id === c.criterionKey)?.description ?? '',
+					result: validResult,
+					summary: c.summary ?? '',
+					page: page.pageNumber,
+				});
+			}
+
+			// Convert issues
+			for (const issue of result.issues) {
+				const severity: IssueSeverity = VALID_SEVERITIES.has(issue.severity)
+					? (issue.severity as IssueSeverity)
+					: 'medium';
+				const category: IssueCategory = VALID_CATEGORIES.has(issue.category)
+					? (issue.category as IssueCategory)
+					: 'missing-label';
+
+				allIssues.push({
+					id: `ISS-${String(issueCounter++).padStart(3, '0')}`,
+					page: page.pageNumber,
+					title: issue.title,
+					description: issue.description,
+					severity,
+					status: 'open',
+					category,
+					bbox: convertBbox(issue.box_2d),
+					criterionId: `${issue.criterionKey}-${page.pageNumber}`,
+				});
+			}
+		} catch (err) {
+			// If a single page fails, add a note but continue
+			console.error(`Analysis failed for page ${page.pageNumber}:`, err);
+			allCriteria.push({
+				id: `ERR-${page.pageNumber}`,
+				name: 'Analysis Error',
+				description: 'Failed to analyze this page',
+				result: 'not-applicable',
+				summary: `Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+				page: page.pageNumber,
+			});
+		}
+	}
+
+	return json({ criteria: allCriteria, issues: allIssues } satisfies AnalysisResponse);
+};
