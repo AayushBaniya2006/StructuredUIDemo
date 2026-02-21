@@ -6,9 +6,12 @@
   import IssueDetail from '$lib/components/IssueDetail.svelte';
   import CriteriaPanel from '$lib/components/CriteriaPanel.svelte';
   import PageThumbnails from '$lib/components/PageThumbnails.svelte';
+  import AnalysisProgress from '$lib/components/AnalysisProgress.svelte';
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
-  import type { Issue } from '$lib/types';
+  import { loadDocument } from '$lib/utils/pdf-renderer';
+  import { pageToBase64 } from '$lib/utils/page-to-image';
+  import type { Issue, AnalysisResponse } from '$lib/types';
 
   let rightTab = $state<'issues' | 'criteria'>('issues');
   let documentLoaded = $state(false);
@@ -17,8 +20,9 @@
   let fitRequested = $state(0);
   let uploadError = $state<string | null>(null);
   let blobUrl = $state<string | null>(null);
+  let analysisAbortController: AbortController | null = $state(null);
 
-  function handleFileUpload(file: File) {
+  async function handleFileUpload(file: File) {
     if (file.type && file.type !== 'application/pdf') {
       uploadError = 'Only PDF files are supported.';
       return;
@@ -37,21 +41,88 @@
     documentId += 1;
     documentLoaded = true;
 
-    // For user-uploaded PDFs, load empty issues (no AI analysis yet)
-    issuesStore.loadIssues([]);
+    // Run AI analysis on the uploaded PDF
+    await runAnalysis();
   }
 
   async function handleLoadDemo() {
     uploadError = null;
-
-    // Load the sample blueprint
     pdfSource = '/sample-blueprint.pdf';
     documentId += 1;
     documentLoaded = true;
 
-    // Load the mock AI-detected issues
-    const issuesData = await import('$lib/data/issues.json');
-    issuesStore.loadIssues(issuesData.default as Issue[]);
+    // Run real AI analysis instead of loading mock issues
+    await runAnalysis();
+  }
+
+  async function runAnalysis() {
+    if (!pdfSource) return;
+
+    // Reset state
+    issuesStore.loadIssues([]);
+    issuesStore.setAnalysisState({ status: 'analyzing', currentPage: 0, totalPages: 0, error: null });
+    rightTab = 'criteria';
+
+    const abortController = new AbortController();
+    analysisAbortController = abortController;
+
+    try {
+      // Load the PDF document
+      const doc = await loadDocument(pdfSource);
+      const totalPages = doc.numPages;
+      issuesStore.setAnalysisState({ totalPages });
+
+      // Render each page to base64
+      const pageImages: { pageNumber: number; image: string }[] = [];
+      for (let i = 1; i <= totalPages; i++) {
+        if (abortController.signal.aborted) return;
+
+        issuesStore.setAnalysisState({ currentPage: i });
+        const page = await doc.getPage(i);
+        const base64 = await pageToBase64(page);
+        pageImages.push({ pageNumber: i, image: base64 });
+      }
+
+      if (abortController.signal.aborted) return;
+
+      // Send to API
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pages: pageImages }),
+        signal: abortController.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText);
+      }
+
+      const data: AnalysisResponse = await res.json();
+
+      // Load results into stores
+      issuesStore.loadIssues(data.issues);
+      issuesStore.loadCriteria(data.criteria);
+      issuesStore.setAnalysisState({ status: 'done' });
+    } catch (err) {
+      if (abortController.signal.aborted) {
+        issuesStore.setAnalysisState({ status: 'idle' });
+        return;
+      }
+      console.error('Analysis failed:', err);
+      issuesStore.setAnalysisState({
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      analysisAbortController = null;
+    }
+  }
+
+  function cancelAnalysis() {
+    analysisAbortController?.abort();
+    analysisAbortController = null;
+    issuesStore.setAnalysisState({ status: 'idle' });
   }
 
   function handleViewerError(message: string | null) {
@@ -165,7 +236,9 @@
     </div>
   {:else}
     <!-- Document loaded — full viewer UI -->
-    <AppToolbar onFileUpload={handleFileUpload} onResetZoom={handleResetZoom} />
+    <AppToolbar onFileUpload={handleFileUpload} onResetZoom={handleResetZoom} onRunAnalysis={runAnalysis} />
+
+    <AnalysisProgress onCancel={cancelAnalysis} />
 
     {#if uploadError}
       <div class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700" data-testid="upload-error">
