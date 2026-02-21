@@ -21,6 +21,8 @@
   let isRendering = $state(false);
   let error = $state<string | null>(null);
 
+  const ZOOM_MAX = 4;
+
   // Pan state for drag
   let isDragging = false;
   let dragStartX = 0;
@@ -56,15 +58,37 @@
     unsubRenderScale();
   });
 
+  let initialFitDone = false;
+
   async function loadPdf() {
     try {
       error = null;
       pdfDoc = await loadDocument(pdfSource);
       viewerStore.setTotalPages(pdfDoc.numPages);
+      initialFitDone = false;
       await renderCurrentPage();
+      fitToViewport();
     } catch (e) {
       error = `Failed to load PDF: ${e instanceof Error ? e.message : e}`;
     }
+  }
+
+  function fitToViewport() {
+    if (!containerEl || !currentPageObj) return;
+    const containerRect = containerEl.getBoundingClientRect();
+    const viewport = currentPageObj.getViewport({ scale: 1 });
+    const scaleX = (containerRect.width - 40) / viewport.width;
+    const scaleY = (containerRect.height - 60) / viewport.height;
+    const fitScale = Math.min(scaleX, scaleY, ZOOM_MAX);
+    viewerStore.zoomTo(fitScale);
+    // Center the page
+    const pageW = viewport.width * fitScale;
+    const pageH = viewport.height * fitScale;
+    viewerStore.setPan(
+      (containerRect.width - pageW) / 2,
+      (containerRect.height - pageH) / 2
+    );
+    initialFitDone = true;
   }
 
   async function renderCurrentPage() {
@@ -145,7 +169,7 @@
 </script>
 
 <div
-  class="relative flex-1 overflow-hidden bg-gray-900 select-none"
+  class="relative flex-1 overflow-hidden bg-gray-700 select-none"
   bind:this={containerEl}
   onwheel={handleWheel}
   onpointerdown={handlePointerDown}

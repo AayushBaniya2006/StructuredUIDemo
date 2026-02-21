@@ -63,8 +63,8 @@
 
   <div class="flex flex-1 overflow-hidden">
     <!-- Left: Issues panel + thumbnails -->
-    <div class="flex flex-col">
-      <div class="flex-1 overflow-hidden">
+    <div class="flex w-72 shrink-0 flex-col border-r border-gray-200 bg-white">
+      <div class="flex-1 overflow-y-auto overflow-x-hidden">
         <IssuesPanel />
       </div>
       <PageThumbnails pdfSource={pdfSource} />

@@ -53,7 +53,7 @@
   let pages = $derived([...grouped.keys()].sort((a, b) => a - b));
 </script>
 
-<aside class="flex h-full w-72 flex-col border-r border-gray-200 bg-white">
+<aside class="flex h-full flex-col">
   <div class="border-b border-gray-200 px-4 py-3">
     <h2 class="text-sm font-semibold text-gray-900">Issues</h2>
     <p class="text-xs text-gray-500">{filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}</p>

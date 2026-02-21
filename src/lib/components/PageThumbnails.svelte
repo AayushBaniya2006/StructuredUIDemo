@@ -24,7 +24,7 @@
       for (let i = 0; i < doc.numPages; i++) {
         const page = await doc.getPage(i + 1);
         if (thumbnailCanvases[i]) {
-          await renderThumbnail(page, thumbnailCanvases[i], 100);
+          await renderThumbnail(page, thumbnailCanvases[i], 56);
         }
       }
       rendered = true;
@@ -40,19 +40,19 @@
   });
 </script>
 
-<div class="flex flex-col gap-2 border-t border-gray-200 p-2">
-  <span class="px-2 text-xs font-medium text-gray-400">Pages</span>
-  <div class="flex flex-col gap-1.5 overflow-y-auto">
+<div class="border-t border-gray-200 px-3 py-2">
+  <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Pages</span>
+  <div class="mt-1.5 flex gap-2 overflow-x-auto">
     {#each Array(totalPages) as _, i}
       <button
-        class="rounded border-2 transition-colors {currentPage === i + 1 ? 'border-blue-500' : 'border-transparent hover:border-gray-300'}"
+        class="shrink-0 rounded border-2 transition-colors {currentPage === i + 1 ? 'border-blue-500' : 'border-transparent hover:border-gray-300'}"
         onclick={() => viewerStore.goToPage(i + 1)}
       >
         <canvas
           bind:this={thumbnailCanvases[i]}
-          class="block w-full rounded-sm bg-gray-100"
+          class="block h-10 w-14 rounded-sm bg-gray-100 object-contain"
         ></canvas>
-        <span class="block text-center text-[10px] text-gray-500 mt-0.5">{i + 1}</span>
+        <span class="block text-center text-[9px] text-gray-500">{i + 1}</span>
       </button>
     {/each}
   </div>
