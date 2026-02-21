@@ -1,13 +1,23 @@
 import { writable, derived } from 'svelte/store';
-import type { Issue, IssueSeverity, IssueStatus, SeverityFilter, StatusFilter } from '$lib/types';
-import issuesData from '$lib/data/issues.json';
+import type { Issue, IssueStatus, SeverityFilter, StatusFilter, QACriterion } from '$lib/types';
 
 function createIssuesStore() {
-  const issues = writable<Issue[]>(issuesData as Issue[]);
+  const issues = writable<Issue[]>([]);
   const selectedId = writable<string | null>(null);
   const hoveredId = writable<string | null>(null);
   const severityFilter = writable<SeverityFilter>('all');
   const statusFilter = writable<StatusFilter>('all');
+
+  const criteria = writable<QACriterion[]>([]);
+  const analysisState = writable<{
+    status: 'idle' | 'analyzing' | 'done' | 'error';
+    currentPage: number;
+    totalPages: number;
+    error: string | null;
+  }>({ status: 'idle', currentPage: 0, totalPages: 0, error: null });
+
+  const criteriaForPage = (page: number) =>
+    derived(criteria, ($criteria) => $criteria.filter((c) => c.page === page));
 
   const filtered = derived(
     [issues, severityFilter, statusFilter],
@@ -39,8 +49,16 @@ function createIssuesStore() {
     filtered,
     selected,
     issuesForPage,
+    criteria,
+    analysisState,
+    criteriaForPage,
 
     select: (id: string | null) => selectedId.set(id),
+    // Force re-emission even if same ID (clears then re-sets to trigger subscribers)
+    reselect: (id: string) => {
+      selectedId.set(null);
+      selectedId.set(id);
+    },
     hover: (id: string | null) => hoveredId.set(id),
 
     toggleStatus: (id: string) =>
@@ -78,8 +96,31 @@ function createIssuesStore() {
       return prev;
     },
 
+    loadCriteria: (data: QACriterion[]) => criteria.set(data),
+
+    setAnalysisState: (state: Partial<{
+      status: 'idle' | 'analyzing' | 'done' | 'error';
+      currentPage: number;
+      totalPages: number;
+      error: string | null;
+    }>) => analysisState.update((s) => ({ ...s, ...state })),
+
+    loadIssues: (data: Issue[]) => {
+      issues.set(data);
+      selectedId.set(null);
+      hoveredId.set(null);
+      severityFilter.set('all');
+      statusFilter.set('all');
+      criteria.set([]);
+      analysisState.set({ status: 'idle', currentPage: 0, totalPages: 0, error: null });
+    },
     setSeverityFilter: (f: SeverityFilter) => severityFilter.set(f),
     setStatusFilter: (f: StatusFilter) => statusFilter.set(f),
+    getSelectedIssue: (): Issue | null => {
+      let selectedIssue: Issue | null = null;
+      selected.subscribe((issue) => (selectedIssue = issue))();
+      return selectedIssue;
+    },
   };
 }
 
