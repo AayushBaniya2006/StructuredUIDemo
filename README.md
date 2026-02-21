@@ -1,42 +1,63 @@
-# sv
+# Blueprint Issue Review Viewer
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A construction blueprint QA/QC issue viewer built as a front-end prototype for AI-driven drawing review workflows.
 
-## Creating a project
+## What This Demonstrates
 
-If you're seeing this, you've probably already done this step. Congrats!
+- **PDF viewer** with pan/zoom and lazy page rendering via pdf.js
+- **AI issue overlay** with normalized bounding boxes on an SVG layer
+- **Issue management** panel with severity/status filtering and keyboard navigation
+- **Performance-aware rendering** with CSS transform zoom and resolution-threshold re-rendering
 
-```sh
-# create a new project
-npx sv create my-app
+## How It Works
+
+The viewer loads a multi-page construction blueprint and displays AI-detected issues as interactive bounding box overlays. Issues are currently mocked but follow a structured data model designed for AI agent output:
+
+```json
+{
+  "id": "ISS-001",
+  "page": 1,
+  "title": "Missing door swing annotation",
+  "description": "...",
+  "severity": "high",
+  "category": "clash",
+  "bbox": { "x": 0.35, "y": 0.42, "width": 0.08, "height": 0.06 }
+}
 ```
 
-To recreate this project with the same configuration:
+Bounding boxes use normalized coordinates (0-1) so AI models can provide results independent of rendering resolution.
 
-```sh
-# recreate this project
-npx sv create --template minimal --types ts --no-install /Volumes/CS_Stuff/StructuredUIDemo
-```
+## Tech Stack
 
-## Developing
+- **SvelteKit** + TypeScript
+- **pdf.js** (pdfjs-dist) for PDF rendering
+- **Tailwind CSS** for styling
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## Keyboard Shortcuts
 
-```sh
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Next / previous issue |
+| `n` / `p` | Next / previous page |
+| `+` / `-` | Zoom in / out |
+| `0` | Reset zoom |
+
+## Development
+
+```bash
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+## Extending
 
-To create a production version of your app:
+- **AI integration:** Replace `src/lib/data/issues.json` with API calls to an AI agent backend
+- **Multi-reviewer:** Add user identity and per-user issue assignments
+- **Export:** Annotate PDF with resolved/open status using pdf-lib
+- **Real-time:** WebSocket updates when AI agents detect new issues
 
-```sh
-npm run build
+## Generate New Mock Blueprint
+
+```bash
+npx tsx scripts/generate-blueprint.ts
 ```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
