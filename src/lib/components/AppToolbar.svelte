@@ -4,7 +4,11 @@
   import type { SeverityFilter, StatusFilter } from '$lib/types';
   import { onDestroy } from 'svelte';
 
-  let { onFileUpload }: { onFileUpload?: (file: File) => void } = $props();
+  let { onFileUpload, onResetZoom, onRunAnalysis }: {
+    onFileUpload?: (file: File) => void;
+    onResetZoom?: () => void;
+    onRunAnalysis?: () => void;
+  } = $props();
 
   let zoom = $state(1);
   let showAll = $state(true);
@@ -17,7 +21,9 @@
   });
   const unsubSev = issuesStore.severityFilter.subscribe((v) => (severityFilter = v));
   const unsubStat = issuesStore.statusFilter.subscribe((v) => (statusFilter = v));
-  onDestroy(() => { unsubViewer(); unsubSev(); unsubStat(); });
+  let analysisStatus = $state<'idle' | 'analyzing' | 'done' | 'error'>('idle');
+  const unsubAnalysis = issuesStore.analysisState.subscribe((s) => (analysisStatus = s.status));
+  onDestroy(() => { unsubViewer(); unsubSev(); unsubStat(); unsubAnalysis(); });
 
   let fileInput = $state<HTMLInputElement>(undefined!);
 
@@ -41,21 +47,22 @@
   ];
 </script>
 
-<header class="flex items-center gap-4 border-b border-gray-200 bg-white px-4 py-2">
+<header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 bg-white px-3 py-1.5" data-testid="app-toolbar">
   <!-- Title -->
-  <div class="flex items-center gap-2">
-    <svg class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+  <div class="flex items-center gap-1.5">
+    <svg class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     </svg>
-    <h1 class="text-sm font-semibold text-gray-900 whitespace-nowrap">Blueprint Issue Viewer</h1>
+    <h1 class="text-xs font-semibold text-gray-900 whitespace-nowrap">Blueprint Issue Viewer</h1>
   </div>
 
-  <div class="h-5 w-px bg-gray-300"></div>
+  <div class="hidden sm:block h-4 w-px bg-gray-200"></div>
 
   <!-- Upload -->
   <button
-    class="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+    class="rounded bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 transition-colors"
     onclick={() => fileInput.click()}
+    data-testid="upload-button"
   >
     Upload PDF
   </button>
@@ -65,38 +72,59 @@
     accept=".pdf"
     class="hidden"
     onchange={handleFileChange}
+    data-testid="upload-input"
   />
 
-  <div class="h-5 w-px bg-gray-300"></div>
+  <!-- Run Analysis -->
+  <button
+    class="rounded px-2.5 py-1 text-[11px] font-medium transition-colors {analysisStatus === 'analyzing' ? 'bg-amber-100 text-amber-700 cursor-wait' : 'bg-green-600 text-white hover:bg-green-700'}"
+    onclick={() => onRunAnalysis?.()}
+    disabled={analysisStatus === 'analyzing'}
+    data-testid="run-analysis"
+  >
+    {#if analysisStatus === 'analyzing'}
+      Analyzing...
+    {:else if analysisStatus === 'done'}
+      Re-run Check
+    {:else}
+      Run Check
+    {/if}
+  </button>
+
+  <div class="hidden sm:block h-4 w-px bg-gray-200"></div>
 
   <!-- Zoom controls -->
-  <div class="flex items-center gap-1">
+  <div class="flex items-center gap-0.5">
     <button
-      class="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+      class="rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
       onclick={() => viewerStore.zoomOut()}
-    >-</button>
-    <span class="min-w-[3rem] text-center text-xs font-medium text-gray-700">
+      data-testid="zoom-out"
+    >&minus;</button>
+    <span class="min-w-[2.5rem] text-center text-[11px] font-medium text-gray-600 tabular-nums">
       {Math.round(zoom * 100)}%
     </span>
     <button
-      class="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+      class="rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
       onclick={() => viewerStore.zoomIn()}
+      data-testid="zoom-in"
     >+</button>
     <button
-      class="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100"
-      onclick={() => viewerStore.resetZoom()}
-    >Reset</button>
+      class="rounded px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100"
+      onclick={() => onResetZoom?.()}
+      data-testid="zoom-reset"
+    >Fit</button>
   </div>
 
-  <div class="h-5 w-px bg-gray-300"></div>
+  <div class="hidden sm:block h-4 w-px bg-gray-200"></div>
 
   <!-- Severity filters -->
-  <div class="flex items-center gap-1">
-    <span class="text-xs text-gray-400 mr-1">Severity:</span>
+  <div class="flex items-center gap-0.5">
+    <span class="text-[10px] text-gray-400 mr-0.5 hidden md:inline">Severity:</span>
     {#each severityOptions as opt}
       <button
-        class="rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors {severityFilter === opt.value ? opt.color + ' ring-1 ring-current' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}"
+        class="rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors {severityFilter === opt.value ? opt.color + ' ring-1 ring-current' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}"
         onclick={() => issuesStore.setSeverityFilter(opt.value)}
+        data-testid={`severity-${opt.value}`}
       >
         {opt.label}
       </button>
@@ -104,12 +132,13 @@
   </div>
 
   <!-- Status filters -->
-  <div class="flex items-center gap-1">
-    <span class="text-xs text-gray-400 mr-1">Status:</span>
+  <div class="flex items-center gap-0.5">
+    <span class="text-[10px] text-gray-400 mr-0.5 hidden md:inline">Status:</span>
     {#each statusOptions as opt}
       <button
-        class="rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors {statusFilter === opt.value ? 'bg-gray-700 text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}"
+        class="rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors {statusFilter === opt.value ? 'bg-gray-700 text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}"
         onclick={() => issuesStore.setStatusFilter(opt.value)}
+        data-testid={`status-${opt.value}`}
       >
         {opt.label}
       </button>
@@ -120,8 +149,9 @@
 
   <!-- Overlay toggle -->
   <button
-    class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {showAll ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}"
+    class="rounded px-2 py-0.5 text-[11px] font-medium transition-colors {showAll ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}"
     onclick={() => viewerStore.toggleOverlays()}
+    data-testid="overlay-toggle"
   >
     {showAll ? 'All Boxes' : 'Selected Only'}
   </button>
