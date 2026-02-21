@@ -29,7 +29,7 @@
   }
 </script>
 
-<aside class="flex h-full w-64 flex-col border-l border-gray-200 bg-white">
+<aside class="flex h-full flex-col bg-white" data-testid="issue-detail">
   {#if selected}
     <div class="flex-1 overflow-y-auto p-4">
       <div class="mb-3 flex items-center justify-between">
@@ -51,6 +51,7 @@
       <button
         class="w-full rounded-md px-3 py-2 text-sm font-medium transition-colors {selected.status === 'open' ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
         onclick={() => issuesStore.toggleStatus(selected!.id)}
+        data-testid="toggle-status"
       >
         {selected.status === 'open' ? 'Mark as Resolved' : 'Reopen Issue'}
       </button>
@@ -60,6 +61,7 @@
       <button
         class="flex-1 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
         onclick={handlePrev}
+        data-testid="detail-prev"
       >
         &larr; Prev
       </button>
@@ -67,6 +69,7 @@
       <button
         class="flex-1 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
         onclick={handleNext}
+        data-testid="detail-next"
       >
         Next &rarr;
       </button>
