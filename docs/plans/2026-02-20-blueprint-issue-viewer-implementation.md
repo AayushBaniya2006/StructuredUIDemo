@@ -2083,3 +2083,18 @@ git commit -m "chore: add Vercel adapter for deployment"
 | 14 | Integration testing + bug fixes | 30 min |
 | 15 | README | 10 min |
 | 16 | Deploy to Vercel | 10 min |
+
+## 2026-02-21 Remediation Status
+
+Implemented:
+- Node runtime pinned to 22 (`.nvmrc`, `package.json` engines, adapter runtime config).
+- pdf.js render typing fix (RenderParameters contract now satisfied).
+- Canonical document source/token flow for upload synchronization.
+- Thumbnail reset/re-render on document changes.
+- Center-on-bbox behavior for issue selection flows.
+- Neighbor page prefetch/cache for viewer rendering.
+- CI pipeline with check/test/e2e/build gates.
+- Expanded test suite:
+  - unit/store/component tests (Vitest)
+  - e2e tests (Playwright)
+- README and docs updated to reflect current behavior and runtime requirements.

@@ -19,6 +19,7 @@ export type Issue = {
   category: IssueCategory;
   bbox: BoundingBox;
   criterionId?: string;   // optional link to parent QA criterion
+  confidence?: number;     // 0-100, AI confidence score
 };
 
 export type ViewerState = {
@@ -44,9 +45,16 @@ export type QACriterion = {
   result: CriterionResult;
   summary: string;      // AI-generated explanation
   page: number;         // which page this was evaluated on
+  confidence?: number;   // 0-100, AI confidence score
 };
 
 export type AnalysisResponse = {
   criteria: QACriterion[];
   issues: Issue[];
+  metadata?: {
+    totalPages: number;
+    analyzedPages: number;
+    failedPages: number;
+    emptyIssues: boolean;
+  };
 };

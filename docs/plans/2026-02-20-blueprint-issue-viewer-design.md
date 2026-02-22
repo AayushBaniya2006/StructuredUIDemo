@@ -4,6 +4,18 @@
 **Target:** Structured AI (YC) — Software Engineering Intern cold-email demo
 **Goal:** Prototype the "AI found issues → human reviews in a viewer" workflow for construction blueprint QA/QC
 
+## 2026-02-21 Remediation Update
+
+- Runtime is now pinned to Node 22 for local/CI/deploy parity.
+- Issue selection now recenters the viewport on the selected bbox.
+- Viewer now prefetches/caches current page ±1 for faster page navigation.
+- Upload flow now uses a canonical document token so viewer and thumbnails stay synchronized.
+- Automated validation now includes:
+  - `npm run check`
+  - `npm run test` (unit/store/component)
+  - `npm run test:e2e` (Playwright)
+  - `npm run build`
+
 ## User Story
 
 An engineer opens the viewer, sees a multi-page architectural blueprint rendered with pan/zoom. A side panel lists AI-detected issues (clashes, missing labels, code violations). Clicking an issue jumps to the correct page, highlights the region with a bounding box, and shows issue metadata. The engineer can filter by severity/status, toggle overlay visibility, and cycle through issues with keyboard shortcuts.
@@ -172,3 +184,12 @@ Emphasize:
 - Pluggable data model — issues assume AI agent output
 - Svelte + TypeScript matching Structured AI's stack
 - Normalized bounding boxes for resolution-independent AI coordinates
+
+
+
+
+
+
+
+
+

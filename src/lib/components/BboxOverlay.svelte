@@ -1,35 +1,47 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { derived } from 'svelte/store';
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
   import { bboxToPixels } from '$lib/utils/coordinates';
-  import { derived } from 'svelte/store';
+  import type { Issue } from '$lib/types';
 
   let { width, height, page }: { width: number; height: number; page: number } = $props();
 
-  const pageIssues = $derived(issuesStore.issuesForPage(page));
-  let issues: import('$lib/types').Issue[] = $state([]);
+  let issues: Issue[] = $state([]);
   let selectedId: string | null = $state(null);
   let hoveredId: string | null = $state(null);
   let showAll = $state(true);
 
-  // Subscribe to reactive stores
+  // When page changes, we need to tear down and re-subscribe to the correct page store.
+  // Use $effect so we react to the `page` prop changing.
+  let cleanupPageSub: (() => void) | null = null;
+
   $effect(() => {
-    const unsub = derived(
-      [pageIssues, issuesStore.selectedId, issuesStore.hoveredId, viewerStore],
-      ([$issues, $selId, $hovId, $viewer]) => ({
-        issues: $issues,
-        selectedId: $selId,
-        hoveredId: $hovId,
-        showAll: $viewer.showAllOverlays,
-      })
-    ).subscribe((val) => {
-      issues = val.issues;
-      selectedId = val.selectedId;
-      hoveredId = val.hoveredId;
-      showAll = val.showAll;
+    // This runs whenever `page` (a prop) changes
+    const pageStore = issuesStore.issuesForPage(page);
+    const unsub = pageStore.subscribe((v) => {
+      issues = v;
     });
 
-    return unsub;
+    cleanupPageSub?.();
+    cleanupPageSub = unsub;
+
+    return () => {
+      unsub();
+      cleanupPageSub = null;
+    };
+  });
+
+  // Subscribe to selection, hover, and overlay state
+  const unsubSelected = issuesStore.selectedId.subscribe((v) => (selectedId = v));
+  const unsubHovered = issuesStore.hoveredId.subscribe((v) => (hoveredId = v));
+  const unsubViewer = viewerStore.subscribe((v) => (showAll = v.showAllOverlays));
+
+  onDestroy(() => {
+    unsubSelected();
+    unsubHovered();
+    unsubViewer();
   });
 
   function getSeverityColor(severity: string): string {
@@ -70,7 +82,6 @@
       />
 
       {#if isSelected}
-        <!-- Label above selected bbox -->
         <foreignObject
           x={px.x}
           y={px.y - 24}

@@ -2,23 +2,13 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { QACriterion, Issue, IssueSeverity, IssueCategory, AnalysisResponse } from '$lib/types';
 import { env } from '$env/dynamic/private';
+import { qaCriteria } from '$lib/config/qa-criteria';
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-const QA_CRITERIA = [
-	{ id: 'EQ', name: 'Equipment/Element Labels', description: 'All major equipment, rooms, and elements are labeled' },
-	{ id: 'DIM', name: 'Dimension Strings', description: 'Dimension lines are present and complete' },
-	{ id: 'TB', name: 'Title Block & Scale', description: 'Title block present with sheet number, scale indicated' },
-	{ id: 'FS', name: 'Fire Safety Markings', description: 'Fire exits, fire-rated assemblies, extinguishers marked' },
-	{ id: 'SYM', name: 'Symbol Consistency', description: 'Symbols match legend, no undefined symbols' },
-	{ id: 'ANN', name: 'Annotations & Notes', description: 'General notes, callouts, and references present' },
-	{ id: 'CRD', name: 'Coordination Markers', description: 'Grid lines, column markers, reference bubbles present' },
-	{ id: 'CLR', name: 'Clearance & Accessibility', description: 'ADA clearances, door swings, egress paths shown' },
-];
-
 function buildPrompt(pageNumber: number): string {
-	const criteriaList = QA_CRITERIA.map(
+	const criteriaList = qaCriteria.map(
 		(c) => `- ${c.id}: ${c.name} — ${c.description}`
 	).join('\n');
 
@@ -42,7 +32,8 @@ Return ONLY valid JSON in this exact format:
       "criterionKey": "EQ",
       "name": "Equipment/Element Labels",
       "result": "pass" | "fail" | "not-applicable",
-      "summary": "Brief explanation of finding"
+      "summary": "Brief explanation of finding",
+      "confidence": 0-100
     }
   ],
   "issues": [
@@ -52,12 +43,18 @@ Return ONLY valid JSON in this exact format:
       "severity": "high" | "medium" | "low",
       "category": "clash" | "missing-label" | "code-violation" | "clearance",
       "criterionKey": "EQ",
-      "box_2d": [ymin, xmin, ymax, xmax]
+      "box_2d": [ymin, xmin, ymax, xmax],
+      "confidence": 0-100
     }
   ]
 }
 
 IMPORTANT:
+- Include a "confidence" score (0-100) for each criterion and issue indicating your certainty
+- Higher confidence (80-100) means you're very certain
+- Medium confidence (50-79) means reasonably certain but possible ambiguity
+- Low confidence (0-49) means uncertain, low-quality data, or unclear situation
+- box_2d coordinates are normalized 0-1000 (0=top-left, 1000=bottom-right)
 - box_2d coordinates are normalized 0-1000 (0=top-left, 1000=bottom-right)
 - Only include issues for FAILED criteria
 - Be specific about what's missing or wrong
@@ -71,6 +68,7 @@ type GeminiIssue = {
 	category: string;
 	criterionKey: string;
 	box_2d: [number, number, number, number];
+	confidence?: number;
 };
 
 type GeminiCriterion = {
@@ -79,6 +77,7 @@ type GeminiCriterion = {
 	name: string;
 	result: string;
 	summary: string;
+	confidence?: number;
 };
 
 type GeminiPageResult = {
@@ -159,13 +158,36 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw error(400, 'Request must include a non-empty "pages" array.');
 	}
 
-	const allCriteria: QACriterion[] = [];
+		const allCriteria: QACriterion[] = [];
 	const allIssues: Issue[] = [];
 	let issueCounter = 1;
+	let failedPageCount = 0;
+	const totalPages = pages.length;
 
 	for (const page of pages) {
 		try {
 			const result = await analyzePage(page.pageNumber, page.image, apiKey);
+
+			// Check if Gemini recognized this as a blueprint
+			// If most criteria are not-applicable, the content wasn't recognized
+			const notApplicableCount = result.criteria.filter((c) => c.result === 'not-applicable').length;
+			const totalCriteria = result.criteria.length;
+			const notApplicableRatio = totalCriteria > 0 ? notApplicableCount / totalCriteria : 0;
+
+			if (notApplicableRatio > 0.7) {
+				// More than 70% not-applicable - likely unrecognized content
+				allCriteria.push({
+					id: `WARN-${page.pageNumber}`,
+					name: 'Content Recognition Warning',
+					description: 'Unable to recognize this as a construction blueprint',
+					result: 'not-applicable',
+					summary: 'The AI was unable to reliably identify this page as a construction blueprint. This may be because: 1) The file is not a blueprint, 2) The image quality is too low, 3) The blueprint type is not supported. Please try uploading a clearer construction drawing.',
+					page: page.pageNumber,
+				});
+
+				failedPageCount++;
+				continue;
+			}
 
 			// Convert criteria
 			for (const c of result.criteria) {
@@ -176,10 +198,11 @@ export const POST: RequestHandler = async ({ request }) => {
 				allCriteria.push({
 					id: c.id || `${c.criterionKey}-${page.pageNumber}`,
 					name: c.name,
-					description: QA_CRITERIA.find((q) => q.id === c.criterionKey)?.description ?? '',
+					description: qaCriteria.find((q) => q.id === c.criterionKey)?.description ?? '',
 					result: validResult,
 					summary: c.summary ?? '',
 					page: page.pageNumber,
+					confidence: c.confidence,
 				});
 			}
 
@@ -202,6 +225,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					category,
 					bbox: convertBbox(issue.box_2d),
 					criterionId: `${issue.criterionKey}-${page.pageNumber}`,
+					confidence: issue.confidence,
 				});
 			}
 		} catch (err) {
@@ -215,8 +239,23 @@ export const POST: RequestHandler = async ({ request }) => {
 				summary: `Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
 				page: page.pageNumber,
 			});
+			failedPageCount++;
 		}
 	}
 
-	return json({ criteria: allCriteria, issues: allIssues } satisfies AnalysisResponse);
+	// If all pages failed, return an error instead of a successful response
+	if (failedPageCount === totalPages) {
+		throw error(400, 'Unable to analyze this document. This may be because: 1) The file is not a valid PDF blueprint, 2) The image quality is too low for AI analysis, 3) The blueprint format is not supported. Please try uploading a clearer construction drawing.');
+	}
+
+	return json({
+		criteria: allCriteria,
+		issues: allIssues,
+		metadata: {
+			totalPages,
+			analyzedPages: totalPages - failedPageCount,
+			failedPages: failedPageCount,
+			emptyIssues: allIssues.length === 0,
+		}
+	} satisfies AnalysisResponse);
 };

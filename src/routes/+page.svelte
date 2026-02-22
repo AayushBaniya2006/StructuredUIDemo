@@ -7,11 +7,14 @@
   import CriteriaPanel from '$lib/components/CriteriaPanel.svelte';
   import PageThumbnails from '$lib/components/PageThumbnails.svelte';
   import AnalysisProgress from '$lib/components/AnalysisProgress.svelte';
+  import MetricsPanel from '$lib/components/MetricsPanel.svelte';
+  import ReportPreview from '$lib/components/ReportPreview.svelte';
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
   import { loadDocument } from '$lib/utils/pdf-renderer';
   import { pageToBase64 } from '$lib/utils/page-to-image';
   import type { Issue, AnalysisResponse } from '$lib/types';
+  import { t } from '$lib/config/app-config';
 
   let rightTab = $state<'issues' | 'criteria'>('issues');
   let documentLoaded = $state(false);
@@ -21,10 +24,12 @@
   let uploadError = $state<string | null>(null);
   let blobUrl = $state<string | null>(null);
   let analysisAbortController: AbortController | null = $state(null);
+  let showMetrics = $state(false);
+  let showReport = $state(false);
 
   async function handleFileUpload(file: File) {
     if (file.type && file.type !== 'application/pdf') {
-      uploadError = 'Only PDF files are supported.';
+      uploadError = t.upload.errorNotPdf;
       return;
     }
 
@@ -47,13 +52,20 @@
 
   async function handleLoadDemo() {
     uploadError = null;
-    pdfSource = '/sample-blueprint.pdf';
+
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+      blobUrl = null;
+    }
+
+    pdfSource = '/demo-blueprint.pdf';
     documentId += 1;
     documentLoaded = true;
 
-    // Run real AI analysis instead of loading mock issues
+    // Run AI analysis on the demo blueprint
     await runAnalysis();
   }
+
 
   async function runAnalysis() {
     if (!pdfSource) return;
@@ -100,10 +112,12 @@
 
       const data: AnalysisResponse = await res.json();
 
-      // Load results into stores
-      issuesStore.loadIssues(data.issues);
-      issuesStore.loadCriteria(data.criteria);
-      issuesStore.setAnalysisState({ status: 'done' });
+      // Load results into stores using the new method that handles metadata
+      issuesStore.loadAnalysisResult({
+        criteria: data.criteria,
+        issues: data.issues,
+        metadata: data.metadata,
+      });
     } catch (err) {
       if (abortController.signal.aborted) {
         issuesStore.setAnalysisState({ status: 'idle' });
@@ -113,6 +127,7 @@
       issuesStore.setAnalysisState({
         status: 'error',
         error: err instanceof Error ? err.message : 'Unknown error',
+        emptyIssues: false,
       });
     } finally {
       analysisAbortController = null;
@@ -188,32 +203,29 @@
     <!-- Welcome state -->
     <div class="flex flex-1 items-center justify-center">
       <div class="mx-4 max-w-lg text-center">
-        <div class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100">
-          <svg class="h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+        <div class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600">
+          <img src="/logo.svg" alt="Structured AI" class="h-8 w-8" />
         </div>
 
-        <h1 class="mb-2 text-2xl font-bold text-gray-900">Blueprint Issue Viewer</h1>
+        <h1 class="mb-2 text-2xl font-bold text-gray-900">{t.welcome.title}</h1>
         <p class="mb-8 text-sm text-gray-500">
-          Review AI-detected issues on construction blueprints. Upload a PDF or try the demo to see it in action.
+          {t.welcome.description}
         </p>
 
-        <div class="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <div class="flex items-center justify-center">
+          <button
+            class="mr-3 rounded-lg bg-green-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-green-700 transition-colors"
+            onclick={handleLoadDemo}
+            data-testid="load-demo-button"
+          >
+            Load Demo Blueprint
+          </button>
           <button
             class="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors"
-            onclick={handleLoadDemo}
-            data-testid="load-demo"
-          >
-            Try Demo
-          </button>
-
-          <button
-            class="rounded-lg border border-gray-300 bg-white px-6 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
             onclick={() => welcomeFileInput.click()}
             data-testid="welcome-upload"
           >
-            Upload PDF
+            {t.welcome.uploadButton}
           </button>
           <input
             bind:this={welcomeFileInput}
@@ -229,16 +241,24 @@
         {/if}
 
         <div class="mt-10 text-xs text-gray-400">
-          <p class="mb-1 font-medium text-gray-500">Keyboard shortcuts</p>
+          <p class="mb-1 font-medium text-gray-500">{t.welcome.keyboardShortcutsTitle}</p>
           <p><kbd class="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">j</kbd> / <kbd class="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">k</kbd> next/prev issue &nbsp; <kbd class="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">n</kbd> / <kbd class="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">p</kbd> next/prev page &nbsp; <kbd class="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">+</kbd> / <kbd class="rounded bg-gray-100 px-1 py-0.5 text-[10px] font-mono">-</kbd> zoom</p>
         </div>
       </div>
     </div>
   {:else}
     <!-- Document loaded — full viewer UI -->
-    <AppToolbar onFileUpload={handleFileUpload} onResetZoom={handleResetZoom} onRunAnalysis={runAnalysis} />
+    <AppToolbar onFileUpload={handleFileUpload} onResetZoom={handleResetZoom} onRunAnalysis={runAnalysis} onShowMetrics={() => showMetrics = true} onExportReport={() => showReport = true} />
 
     <AnalysisProgress onCancel={cancelAnalysis} />
+
+    {#if showMetrics}
+      <MetricsPanel onClose={() => showMetrics = false} />
+    {/if}
+
+    {#if showReport}
+      <ReportPreview onClose={() => showReport = false} />
+    {/if}
 
     {#if uploadError}
       <div class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700" data-testid="upload-error">
@@ -274,7 +294,7 @@
             onclick={() => rightTab = 'criteria'}
             data-testid="tab-criteria"
           >
-            QA Criteria
+            {t.panels.criteria.title}
           </button>
         </div>
 

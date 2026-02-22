@@ -36,12 +36,18 @@ export async function renderPage({ page, canvas, scale }: RenderOptions): Promis
     outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 
   const renderContext = {
+    canvas,
     canvasContext: context,
     transform,
     viewport,
   };
 
   await page.render(renderContext).promise;
+}
+
+export function getDocumentKey(source: string | ArrayBuffer): string {
+  if (typeof source === 'string') return `url:${source}`;
+  return `buffer:${source.byteLength}`;
 }
 
 export function getPageDimensions(page: PDFPage, scale: number) {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { issuesStore } from '$lib/stores/issues';
   import { onDestroy } from 'svelte';
+  import { t } from '$lib/config/app-config';
 
   let { onCancel }: { onCancel?: () => void } = $props();
 
@@ -8,6 +9,8 @@
   let currentPage = $state(0);
   let totalPages = $state(0);
   let errorMsg = $state<string | null>(null);
+  let elapsedTime = $state(0);
+  let estimatedTime = $derived(totalPages > 0 ? Math.round(totalPages * 2) : 0);
 
   const unsub = issuesStore.analysisState.subscribe((s) => {
     status = s.status;
@@ -18,6 +21,25 @@
   onDestroy(unsub);
 
   let progress = $derived(totalPages > 0 ? (currentPage / totalPages) * 100 : 0);
+
+  let interval: ReturnType<typeof setInterval> | null = null;
+
+  $effect(() => {
+    if (status === 'analyzing') {
+      elapsedTime = 0;
+      interval = setInterval(() => {
+        elapsedTime += 1;
+      }, 1000);
+    } else {
+      if (interval) clearInterval(interval);
+      interval = null;
+      elapsedTime = 0;
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  });
 </script>
 
 {#if status === 'analyzing'}
@@ -31,12 +53,12 @@
           </svg>
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-gray-900">Analyzing Blueprint</h3>
+          <h3 class="text-sm font-semibold text-gray-900">{t.analysis.title}</h3>
           <p class="text-xs text-gray-500">
             {#if currentPage > 0}
-              Checking page {currentPage} of {totalPages}...
+              {t.analysis.checking.replace('{current}', String(currentPage)).replace('{total}', String(totalPages))}
             {:else}
-              Preparing analysis...
+              {t.analysis.preparing}
             {/if}
           </p>
         </div>
@@ -50,12 +72,25 @@
         ></div>
       </div>
 
+      <!-- Timing info -->
+      <div class="mb-4 text-center text-xs text-gray-500">
+        <p>Elapsed: {Math.floor(elapsedTime / 60)}:{String(elapsedTime % 60).padStart(2, '0')} · Est. remaining: ~{Math.round((estimatedTime - elapsedTime) / 60)}:{String((estimatedTime - elapsedTime) % 60).padStart(2, '0')}</p>
+      </div>
+
+      <!-- Current page preview -->
+      {#if currentPage > 0}
+        <div class="mb-4 rounded-lg bg-gray-50 p-3">
+          <p class="text-xs text-gray-500 mb-1">Analyzing:</p>
+          <p class="text-sm font-medium text-gray-900">Page {currentPage} of {totalPages}</p>
+        </div>
+      {/if}
+
       <button
         class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
         onclick={() => onCancel?.()}
         data-testid="cancel-analysis"
       >
-        Cancel
+        {t.analysis.cancel}
       </button>
     </div>
   </div>
@@ -71,7 +106,7 @@
           </svg>
         </div>
         <div>
-          <h3 class="text-sm font-semibold text-gray-900">Analysis Failed</h3>
+          <h3 class="text-sm font-semibold text-gray-900">{t.analysis.failed}</h3>
           <p class="text-xs text-red-600">{errorMsg ?? 'Unknown error'}</p>
         </div>
       </div>
@@ -81,7 +116,7 @@
         onclick={() => issuesStore.setAnalysisState({ status: 'idle', error: null })}
         data-testid="dismiss-error"
       >
-        Dismiss
+        {t.analysis.dismiss}
       </button>
     </div>
   </div>

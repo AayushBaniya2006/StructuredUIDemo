@@ -1,29 +1,51 @@
 <script lang="ts">
+  import { onDestroy, tick } from 'svelte';
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
   import type { Issue } from '$lib/types';
+  import { t } from '$lib/config/app-config';
 
   let filteredIssues: Issue[] = $state([]);
   let selectedId: string | null = $state(null);
   let currentPage = $state(1);
-  let totalPages = $state(0);
+  let analysisStatus = $state<'idle' | 'analyzing' | 'done' | 'error'>('idle');
+  let emptyIssues = $state(false);
 
   const unsubFiltered = issuesStore.filtered.subscribe((v) => (filteredIssues = v));
-  const unsubSelected = issuesStore.selectedId.subscribe((v) => (selectedId = v));
+  const unsubSelected = issuesStore.selectedId.subscribe((v) => {
+    selectedId = v;
+    // Scroll the selected row into view after DOM updates
+    if (v) {
+      tick().then(() => {
+        const el = document.querySelector(`[data-testid="issue-row-${v}"]`);
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    }
+  });
   const unsubViewer = viewerStore.subscribe((v) => {
     currentPage = v.currentPage;
-    totalPages = v.totalPages;
+  });
+  const unsubAnalysis = issuesStore.analysisState.subscribe((v) => {
+    analysisStatus = v.status;
+    emptyIssues = v.emptyIssues;
   });
 
-  import { onDestroy } from 'svelte';
   onDestroy(() => {
     unsubFiltered();
     unsubSelected();
     unsubViewer();
+    unsubAnalysis();
   });
 
   function handleSelect(issue: Issue) {
-    issuesStore.select(issue.id);
+    if (issue.id === selectedId) {
+      // Re-clicking the same issue — force re-center
+      issuesStore.reselect(issue.id);
+    } else {
+      issuesStore.select(issue.id);
+    }
     viewerStore.goToPage(issue.page);
   }
 
@@ -53,17 +75,17 @@
   let pages = $derived([...grouped.keys()].sort((a, b) => a - b));
 </script>
 
-<aside class="flex h-full flex-col">
+<aside class="flex h-full flex-col" data-testid="issues-panel">
   <div class="border-b border-gray-200 px-4 py-3">
-    <h2 class="text-sm font-semibold text-gray-900">Issues</h2>
-    <p class="text-xs text-gray-500">{filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}</p>
+    <h2 class="text-sm font-semibold text-gray-900">{t.panels.issues.title}</h2>
+    <p class="text-xs text-gray-500">{filteredIssues.length} {filteredIssues.length === 1 ? t.panels.issues.countSingular : t.panels.issues.countPlural}</p>
   </div>
 
   <div class="flex-1 overflow-y-auto">
     {#each pages as page (page)}
       <div class="border-b border-gray-100">
-        <div class="sticky top-0 bg-gray-50 px-4 py-1.5">
-          <span class="text-xs font-medium text-gray-500">Page {page}</span>
+        <div class="sticky top-0 px-4 py-1.5 {page === currentPage ? 'bg-blue-50 border-l-2 border-blue-400' : 'bg-gray-50'}">
+          <span class="text-xs font-medium {page === currentPage ? 'text-blue-700' : 'text-gray-500'}">{t.panels.issues.pageLabel} {page}</span>
         </div>
         {#each grouped.get(page) ?? [] as issue (issue.id)}
           <button
@@ -71,6 +93,7 @@
             onclick={() => handleSelect(issue)}
             onmouseenter={() => handleHover(issue.id)}
             onmouseleave={() => handleHover(null)}
+            data-testid={`issue-row-${issue.id}`}
           >
             <div class="flex items-center gap-2">
               <span class="h-2 w-2 shrink-0 rounded-full {getSeverityDot(issue.severity)}"></span>
@@ -82,14 +105,47 @@
                 <span class="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">Resolved</span>
               {/if}
             </div>
+            {#if issue.confidence !== undefined}
+              <div class="mt-0.5 flex items-center gap-1 pl-4">
+                <div class="h-1 w-8 rounded bg-gray-200">
+                  <div
+                    class="h-full rounded-full"
+                    class:bg-green-400={issue.confidence >= 80}
+                    class:bg-yellow-400={issue.confidence >= 50 && issue.confidence < 80}
+                    class:bg-red-400={issue.confidence < 50}
+                    style="width: {issue.confidence}%"
+                  ></div>
+                </div>
+              </div>
+            {/if}
           </button>
         {/each}
       </div>
     {/each}
 
-    {#if filteredIssues.length === 0}
+    {#if filteredIssues.length === 0 && analysisStatus === 'done'}
+      <div class="flex flex-col items-center justify-center p-8 text-center">
+        {#if emptyIssues}
+          <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+            <svg class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p class="mb-1 text-sm font-medium text-gray-900">{t.panels.issues.emptySuccess}</p>
+          <p class="text-xs text-gray-500">{t.panels.issues.emptySuccessSubtext}</p>
+        {:else}
+          <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+            <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p class="mb-1 text-sm font-medium text-gray-900">{t.panels.issues.emptyFiltered}</p>
+          <p class="text-xs text-gray-500">Try adjusting the severity or status filters above.</p>
+        {/if}
+      </div>
+    {:else if filteredIssues.length === 0}
       <div class="flex items-center justify-center p-8 text-sm text-gray-400">
-        No issues match filters
+        {t.panels.issues.empty}
       </div>
     {/if}
   </div>

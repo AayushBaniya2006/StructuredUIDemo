@@ -3,6 +3,7 @@
   import { viewerStore } from '$lib/stores/viewer';
   import type { Issue } from '$lib/types';
   import { onDestroy } from 'svelte';
+  import { t } from '$lib/config/app-config';
 
   let selected: Issue | null = $state(null);
 
@@ -46,6 +47,24 @@
         <span class="text-xs text-gray-400">Page {selected.page}</span>
       </div>
 
+      {#if selected.confidence !== undefined}
+        <div class="mb-3 flex items-center gap-2">
+          <span class="text-xs text-gray-500">AI Confidence:</span>
+          <div class="flex items-center gap-1">
+            <div class="h-2 w-16 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                class="h-full rounded-full transition-all duration-500"
+                class:bg-green-500={selected.confidence >= 80}
+                class:bg-yellow-500={selected.confidence >= 50 && selected.confidence < 80}
+                class:bg-red-500={selected.confidence < 50}
+                style="width: {selected.confidence}%"
+              ></div>
+            </div>
+            <span class="text-xs font-medium text-gray-700">{Math.round(selected.confidence)}%</span>
+          </div>
+        </div>
+      {/if}
+
       <p class="mb-4 text-sm leading-relaxed text-gray-600">{selected.description}</p>
 
       <button
@@ -53,7 +72,7 @@
         onclick={() => issuesStore.toggleStatus(selected!.id)}
         data-testid="toggle-status"
       >
-        {selected.status === 'open' ? 'Mark as Resolved' : 'Reopen Issue'}
+        {selected.status === 'open' ? t.panels.issueDetail.markResolved : t.panels.issueDetail.reopenIssue}
       </button>
     </div>
 
@@ -63,7 +82,7 @@
         onclick={handlePrev}
         data-testid="detail-prev"
       >
-        &larr; Prev
+        {t.panels.issueDetail.prev}
       </button>
       <div class="w-px bg-gray-200"></div>
       <button
@@ -71,12 +90,12 @@
         onclick={handleNext}
         data-testid="detail-next"
       >
-        Next &rarr;
+        {t.panels.issueDetail.next}
       </button>
     </div>
   {:else}
     <div class="flex flex-1 items-center justify-center p-4">
-      <p class="text-center text-sm text-gray-400">Select an issue to view details</p>
+      <p class="text-center text-sm text-gray-400">{t.panels.issueDetail.empty}</p>
     </div>
   {/if}
 </aside>
