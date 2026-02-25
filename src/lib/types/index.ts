@@ -2,6 +2,43 @@ export type IssueSeverity = 'low' | 'medium' | 'high';
 export type IssueStatus = 'open' | 'resolved';
 export type IssueCategory = 'clash' | 'missing-label' | 'code-violation' | 'clearance';
 
+/** Sheet type detected from title block / drawing content */
+export type SheetType =
+  | 'architectural'
+  | 'electrical'
+  | 'mechanical'
+  | 'structural'
+  | 'plumbing'
+  | 'civil'
+  | 'cover'
+  | 'schedule'
+  | 'unknown';
+
+/** Short abbreviation badge shown in UI (e.g. "E", "A", "M") */
+export const SHEET_TYPE_ABBREV: Record<SheetType, string> = {
+  architectural: 'A',
+  electrical: 'E',
+  mechanical: 'M',
+  structural: 'S',
+  plumbing: 'P',
+  civil: 'C',
+  cover: 'CV',
+  schedule: 'SCH',
+  unknown: '?',
+};
+
+export const SHEET_TYPE_LABEL: Record<SheetType, string> = {
+  architectural: 'Architectural',
+  electrical: 'Electrical',
+  mechanical: 'Mechanical',
+  structural: 'Structural',
+  plumbing: 'Plumbing',
+  civil: 'Civil',
+  cover: 'Cover Sheet',
+  schedule: 'Schedule',
+  unknown: 'Unknown',
+};
+
 export type BoundingBox = {
   x: number;      // normalized 0–1 from left
   y: number;      // normalized 0–1 from top
@@ -11,15 +48,16 @@ export type BoundingBox = {
 
 export type Issue = {
   id: string;
-  page: number;           // 1-indexed
+  page: number;
   title: string;
   description: string;
   severity: IssueSeverity;
   status: IssueStatus;
   category: IssueCategory;
   bbox: BoundingBox;
-  criterionId?: string;   // optional link to parent QA criterion
-  confidence?: number;     // 0-100, AI confidence score
+  criterionId?: string;
+  confidence?: number;
+  sheetType?: SheetType;
 };
 
 export type ViewerState = {
@@ -34,18 +72,17 @@ export type ViewerState = {
 export type SeverityFilter = IssueSeverity | 'all';
 export type StatusFilter = IssueStatus | 'all';
 
-// --- Gemini AI Analysis Types ---
-
 export type CriterionResult = 'pass' | 'fail' | 'not-applicable';
 
 export type QACriterion = {
-  id: string;           // "EQ-1", "DIM-1"
-  name: string;         // "Equipment Labels Present"
-  description: string;  // what this criterion checks
+  id: string;
+  name: string;
+  description: string;
   result: CriterionResult;
-  summary: string;      // AI-generated explanation
-  page: number;         // which page this was evaluated on
-  confidence?: number;   // 0-100, AI confidence score
+  summary: string;
+  page: number;
+  confidence?: number;
+  sheetType?: SheetType;
 };
 
 export type AnalysisResponse = {
