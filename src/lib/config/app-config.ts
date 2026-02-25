@@ -6,7 +6,7 @@ export const appConfig = {
   },
   welcome: {
     title: 'Structured AI Blueprint QA',
-    description: 'AI-powered construction blueprint quality assurance. Upload a PDF or load our demo to get started.',
+    description: 'AI-powered construction blueprint quality assurance. Upload a PDF to get started.',
     uploadButton: 'Upload PDF',
     keyboardShortcutsTitle: 'Keyboard shortcuts'
   },

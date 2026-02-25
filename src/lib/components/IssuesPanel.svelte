@@ -4,6 +4,7 @@
   import { viewerStore } from '$lib/stores/viewer';
   import type { Issue } from '$lib/types';
   import { t } from '$lib/config/app-config';
+  import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
   let filteredIssues: Issue[] = $state([]);
   let selectedId: string | null = $state(null);
@@ -110,8 +111,8 @@
                 <div class="h-1 w-8 rounded bg-gray-200">
                   <div
                     class="h-full rounded-full"
-                    class:bg-green-400={issue.confidence >= 80}
-                    class:bg-yellow-400={issue.confidence >= 50 && issue.confidence < 80}
+                    class:bg-green-400={issue.confidence >= HIGH_CONFIDENCE_THRESHOLD}
+                    class:bg-yellow-400={issue.confidence >= 50 && issue.confidence < HIGH_CONFIDENCE_THRESHOLD}
                     class:bg-red-400={issue.confidence < 50}
                     style="width: {issue.confidence}%"
                   ></div>

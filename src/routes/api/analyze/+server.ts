@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import type { QACriterion, Issue, IssueSeverity, IssueCategory, AnalysisResponse } from '$lib/types';
 import { env } from '$env/dynamic/private';
 import { qaCriteria } from '$lib/config/qa-criteria';
+import { MAX_PAGES, UNRECOGNIZED_CONTENT_THRESHOLD } from '$lib/config/constants';
 
 const GEMINI_MODEL = env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -164,72 +165,17 @@ export const POST: RequestHandler = async ({ request }) => {
 	let failedPageCount = 0;
 	const totalPages = pages.length;
 
-	for (const page of pages) {
-		try {
-			const result = await analyzePage(page.pageNumber, page.image, apiKey);
+	// Analyze all pages in parallel
+	const pageResults = await Promise.allSettled(
+		pages.map((page) => analyzePage(page.pageNumber, page.image, apiKey))
+	);
 
-			// Check if Gemini recognized this as a blueprint
-			// If most criteria are not-applicable, the content wasn't recognized
-			const notApplicableCount = result.criteria.filter((c) => c.result === 'not-applicable').length;
-			const totalCriteria = result.criteria.length;
-			const notApplicableRatio = totalCriteria > 0 ? notApplicableCount / totalCriteria : 0;
+	for (let i = 0; i < pages.length; i++) {
+		const page = pages[i];
+		const settled = pageResults[i];
 
-			if (notApplicableRatio > 0.7) {
-				// More than 70% not-applicable - likely unrecognized content
-				allCriteria.push({
-					id: `WARN-${page.pageNumber}`,
-					name: 'Content Recognition Warning',
-					description: 'Unable to recognize this as a construction blueprint',
-					result: 'not-applicable',
-					summary: 'The AI was unable to reliably identify this page as a construction blueprint. This may be because: 1) The file is not a blueprint, 2) The image quality is too low, 3) The blueprint type is not supported. Please try uploading a clearer construction drawing.',
-					page: page.pageNumber,
-				});
-
-				failedPageCount++;
-				continue;
-			}
-
-			// Convert criteria
-			for (const c of result.criteria) {
-				const validResult = ['pass', 'fail', 'not-applicable'].includes(c.result)
-					? (c.result as QACriterion['result'])
-					: 'not-applicable';
-
-				allCriteria.push({
-					id: c.id || `${c.criterionKey}-${page.pageNumber}`,
-					name: c.name,
-					description: qaCriteria.find((q) => q.id === c.criterionKey)?.description ?? '',
-					result: validResult,
-					summary: c.summary ?? '',
-					page: page.pageNumber,
-					confidence: c.confidence,
-				});
-			}
-
-			// Convert issues
-			for (const issue of result.issues) {
-				const severity: IssueSeverity = VALID_SEVERITIES.has(issue.severity)
-					? (issue.severity as IssueSeverity)
-					: 'medium';
-				const category: IssueCategory = VALID_CATEGORIES.has(issue.category)
-					? (issue.category as IssueCategory)
-					: 'missing-label';
-
-				allIssues.push({
-					id: `ISS-${String(issueCounter++).padStart(3, '0')}`,
-					page: page.pageNumber,
-					title: issue.title,
-					description: issue.description,
-					severity,
-					status: 'open',
-					category,
-					bbox: convertBbox(issue.box_2d),
-					criterionId: `${issue.criterionKey}-${page.pageNumber}`,
-					confidence: issue.confidence,
-				});
-			}
-		} catch (err) {
-			// If a single page fails, add a note but continue
+		if (settled.status === 'rejected') {
+			const err = settled.reason;
 			console.error(`Analysis failed for page ${page.pageNumber}:`, err);
 			allCriteria.push({
 				id: `ERR-${page.pageNumber}`,
@@ -240,6 +186,70 @@ export const POST: RequestHandler = async ({ request }) => {
 				page: page.pageNumber,
 			});
 			failedPageCount++;
+			continue;
+		}
+
+		const result = settled.value;
+
+		// Check if Gemini recognized this as a blueprint
+		// If most criteria are not-applicable, the content wasn't recognized
+		const notApplicableCount = result.criteria.filter((c) => c.result === 'not-applicable').length;
+		const totalCriteria = result.criteria.length;
+		const notApplicableRatio = totalCriteria > 0 ? notApplicableCount / totalCriteria : 0;
+
+		if (notApplicableRatio > UNRECOGNIZED_CONTENT_THRESHOLD) {
+			// More than 70% not-applicable - likely unrecognized content
+			allCriteria.push({
+				id: `WARN-${page.pageNumber}`,
+				name: 'Content Recognition Warning',
+				description: 'Unable to recognize this as a construction blueprint',
+				result: 'not-applicable',
+				summary: 'The AI was unable to reliably identify this page as a construction blueprint. This may be because: 1) The file is not a blueprint, 2) The image quality is too low, 3) The blueprint type is not supported. Please try uploading a clearer construction drawing.',
+				page: page.pageNumber,
+			});
+
+			failedPageCount++;
+			continue;
+		}
+
+		// Convert criteria
+		for (const c of result.criteria) {
+			const validResult = ['pass', 'fail', 'not-applicable'].includes(c.result)
+				? (c.result as QACriterion['result'])
+				: 'not-applicable';
+
+			allCriteria.push({
+				id: c.id || `${c.criterionKey}-${page.pageNumber}`,
+				name: c.name,
+				description: qaCriteria.find((q) => q.id === c.criterionKey)?.description ?? '',
+				result: validResult,
+				summary: c.summary ?? '',
+				page: page.pageNumber,
+				confidence: c.confidence,
+			});
+		}
+
+		// Convert issues
+		for (const issue of result.issues) {
+			const severity: IssueSeverity = VALID_SEVERITIES.has(issue.severity)
+				? (issue.severity as IssueSeverity)
+				: 'medium';
+			const category: IssueCategory = VALID_CATEGORIES.has(issue.category)
+				? (issue.category as IssueCategory)
+				: 'missing-label';
+
+			allIssues.push({
+				id: `ISS-${String(issueCounter++).padStart(3, '0')}`,
+				page: page.pageNumber,
+				title: issue.title,
+				description: issue.description,
+				severity,
+				status: 'open',
+				category,
+				bbox: convertBbox(issue.box_2d),
+				criterionId: `${issue.criterionKey}-${page.pageNumber}`,
+				confidence: issue.confidence,
+			});
 		}
 	}
 

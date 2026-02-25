@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { viewerStore } from '$lib/stores/viewer';
   import { loadDocument, renderThumbnail } from '$lib/utils/pdf-renderer';
   import { t } from '$lib/config/app-config';
@@ -14,9 +14,19 @@
 
   let currentPage = $state(1);
   let totalPages = $state(0);
-  let rendered = $state(false);
   let activeDocumentId = $state<number | null>(null);
-  let containerEl = $state<HTMLDivElement>(undefined!);
+
+  // Shared doc promise per documentId to avoid re-loading
+  let cachedDocId = -1;
+  let cachedDocPromise: Promise<Awaited<ReturnType<typeof loadDocument>>> | null = null;
+
+  function getDoc() {
+    if (cachedDocId !== documentId || !cachedDocPromise) {
+      cachedDocId = documentId;
+      cachedDocPromise = pdfSource ? loadDocument(pdfSource) : null!;
+    }
+    return cachedDocPromise;
+  }
 
   const unsub = viewerStore.subscribe((v) => {
     currentPage = v.currentPage;
@@ -24,63 +34,62 @@
   });
   onDestroy(unsub);
 
+  // Svelte action: lazily renders the canvas when it scrolls into view
+  function lazyThumb(canvas: HTMLCanvasElement, pageNum: number) {
+    let rendered = false;
+
+    async function render() {
+      if (rendered || !pdfSource) return;
+      rendered = true;
+      try {
+        const doc = await getDoc();
+        const page = await doc.getPage(pageNum);
+        await renderThumbnail(page, canvas, 56);
+      } catch {
+        // thumbnails are non-critical
+      }
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          render();
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+    observer.observe(canvas);
+
+    return {
+      destroy() {
+        observer.disconnect();
+      },
+    };
+  }
+
+  // Reset cached doc when document changes
   $effect(() => {
     if (documentId !== activeDocumentId) {
       activeDocumentId = documentId;
-      rendered = false;
-      queueThumbnailRender();
-    }
-  });
-
-  async function renderThumbnails() {
-    if (rendered || totalPages === 0 || !containerEl || !pdfSource) return;
-    const localDocumentId = documentId;
-
-    try {
-      const doc = await loadDocument(pdfSource);
-      const canvases = Array.from(containerEl.querySelectorAll('canvas')) as HTMLCanvasElement[];
-
-      for (let i = 0; i < doc.numPages; i++) {
-        if (localDocumentId !== documentId) return;
-
-        const page = await doc.getPage(i + 1);
-        const canvas = canvases[i];
-        if (canvas) {
-          await renderThumbnail(page, canvas, 56);
-        }
-      }
-
-      if (localDocumentId === documentId) rendered = true;
-    } catch {
-      // Thumbnails are non-critical; silently fail
-    }
-  }
-
-  async function queueThumbnailRender() {
-    await tick();
-    if (totalPages > 0) {
-      renderThumbnails();
-    }
-  }
-
-  $effect(() => {
-    if (totalPages > 0) {
-      queueThumbnailRender();
+      cachedDocId = -1;
+      cachedDocPromise = null;
     }
   });
 </script>
 
-<div class="border-t border-gray-200 px-3 py-2" data-testid="page-thumbnails" bind:this={containerEl}>
+<div class="border-t border-gray-200 px-3 py-2" data-testid="page-thumbnails">
   <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{t.thumbnails.title}</span>
   <div class="mt-1.5 flex gap-2 overflow-x-auto">
     {#each Array(totalPages) as _, i}
+      {@const pageNum = i + 1}
       <button
-        class="shrink-0 rounded border-2 transition-colors {currentPage === i + 1 ? 'border-blue-500' : 'border-transparent hover:border-gray-300'}"
-        onclick={() => viewerStore.goToPage(i + 1)}
-        data-testid={`thumbnail-${i + 1}`}
+        class="shrink-0 rounded border-2 transition-colors {currentPage === pageNum ? 'border-blue-500' : 'border-transparent hover:border-gray-300'}"
+        onclick={() => viewerStore.goToPage(pageNum)}
+        data-testid={`thumbnail-${pageNum}`}
       >
-        <canvas class="block h-10 w-14 rounded-sm bg-gray-100 object-contain"></canvas>
-        <span class="block text-center text-[9px] text-gray-500">{i + 1}</span>
+        <canvas class="block h-10 w-14 rounded-sm bg-gray-100" use:lazyThumb={pageNum}></canvas>
+        <span class="block text-center text-[9px] text-gray-500">{pageNum}</span>
       </button>
     {/each}
   </div>

@@ -56,7 +56,9 @@
           <h3 class="text-sm font-semibold text-gray-900">{t.analysis.title}</h3>
           <p class="text-xs text-gray-500">
             {#if currentPage > 0}
-              {t.analysis.checking.replace('{current}', String(currentPage)).replace('{total}', String(totalPages))}
+              Rendering pages…
+            {:else if totalPages > 0}
+              Analyzing with AI…
             {:else}
               {t.analysis.preparing}
             {/if}
@@ -77,13 +79,19 @@
         <p>Elapsed: {Math.floor(elapsedTime / 60)}:{String(elapsedTime % 60).padStart(2, '0')} · Est. remaining: ~{Math.round((estimatedTime - elapsedTime) / 60)}:{String((estimatedTime - elapsedTime) % 60).padStart(2, '0')}</p>
       </div>
 
-      <!-- Current page preview -->
-      {#if currentPage > 0}
-        <div class="mb-4 rounded-lg bg-gray-50 p-3">
-          <p class="text-xs text-gray-500 mb-1">Analyzing:</p>
+      <!-- Status detail -->
+      <div class="mb-4 rounded-lg bg-gray-50 p-3">
+        {#if currentPage > 0}
+          <p class="text-xs text-gray-500 mb-1">Rendering:</p>
           <p class="text-sm font-medium text-gray-900">Page {currentPage} of {totalPages}</p>
-        </div>
-      {/if}
+        {:else if totalPages > 0}
+          <p class="text-xs text-gray-500 mb-1">Analyzing:</p>
+          <p class="text-sm font-medium text-gray-900">All {totalPages} pages in parallel</p>
+        {:else}
+          <p class="text-xs text-gray-500 mb-1">Status:</p>
+          <p class="text-sm font-medium text-gray-900">Preparing…</p>
+        {/if}
+      </div>
 
       <button
         class="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"

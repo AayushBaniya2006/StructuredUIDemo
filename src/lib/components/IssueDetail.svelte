@@ -4,6 +4,7 @@
   import type { Issue } from '$lib/types';
   import { onDestroy } from 'svelte';
   import { t } from '$lib/config/app-config';
+  import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
   let selected: Issue | null = $state(null);
 
@@ -54,8 +55,8 @@
             <div class="h-2 w-16 rounded-full bg-gray-200 overflow-hidden">
               <div
                 class="h-full rounded-full transition-all duration-500"
-                class:bg-green-500={selected.confidence >= 80}
-                class:bg-yellow-500={selected.confidence >= 50 && selected.confidence < 80}
+                class:bg-green-500={selected.confidence >= HIGH_CONFIDENCE_THRESHOLD}
+                class:bg-yellow-500={selected.confidence >= 50 && selected.confidence < HIGH_CONFIDENCE_THRESHOLD}
                 class:bg-red-500={selected.confidence < 50}
                 style="width: {selected.confidence}%"
               ></div>

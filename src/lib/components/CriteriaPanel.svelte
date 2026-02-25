@@ -3,6 +3,7 @@
   import { onDestroy } from 'svelte';
   import type { QACriterion } from '$lib/types';
   import { t } from '$lib/config/app-config';
+  import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
   let criteria: QACriterion[] = $state([]);
   let selectedCriterionId: string | null = $state(null);
@@ -82,7 +83,7 @@
             {#if criterion.confidence !== undefined}
               <div class="mt-1 flex items-center gap-1">
                 <span class="text-[10px] text-gray-500">Confidence:</span>
-                <span class="text-[10px] font-medium {criterion.confidence >= 80 ? 'text-green-600' : criterion.confidence >= 50 ? 'text-yellow-600' : 'text-red-600'}">{Math.round(criterion.confidence)}%</span>
+                <span class="text-[10px] font-medium {criterion.confidence >= HIGH_CONFIDENCE_THRESHOLD ? 'text-green-600' : criterion.confidence >= 50 ? 'text-yellow-600' : 'text-red-600'}">{Math.round(criterion.confidence)}%</span>
               </div>
             {/if}
           </button>

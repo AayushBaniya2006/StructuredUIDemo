@@ -3,6 +3,7 @@
   import { issuesStore } from '$lib/stores/issues';
   import type { SeverityFilter, StatusFilter } from '$lib/types';
   import { t } from '$lib/config/app-config';
+  import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
   import { onDestroy } from 'svelte';
 
   let { onFileUpload, onResetZoom, onRunAnalysis, onShowMetrics, onExportReport, onShare }: {
@@ -41,7 +42,7 @@
   }
 
   function handleShare() {
-    const shareUrl = `${window.location.origin}?demo=true`;
+    const shareUrl = window.location.origin;
     navigator.clipboard.writeText(shareUrl).then(() => {
       showShareToast = true;
       setTimeout(() => showShareToast = false, 3000);
@@ -70,7 +71,7 @@
     {#if complianceScore > 0}
       <div class="flex items-center gap-2 ml-4">
         <span class="text-[10px] text-gray-400">Compliance:</span>
-        <span class="rounded px-2 py-0.5 text-xs font-bold {complianceScore >= 80 ? 'bg-green-100 text-green-700' : complianceScore >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
+        <span class="rounded px-2 py-0.5 text-xs font-bold {complianceScore >= HIGH_CONFIDENCE_THRESHOLD ? 'bg-green-100 text-green-700' : complianceScore >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
           {complianceScore}%
         </span>
       </div>

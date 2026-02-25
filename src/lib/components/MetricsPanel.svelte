@@ -3,6 +3,7 @@
   import { issuesStore } from '$lib/stores/issues';
   import type { Issue, QACriterion } from '$lib/types';
   import { t } from '$lib/config/app-config';
+  import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -53,13 +54,13 @@
   });
 
   function getComplianceColor(score: number): string {
-    if (score >= 80) return 'bg-green-500';
+    if (score >= HIGH_CONFIDENCE_THRESHOLD) return 'bg-green-500';
     if (score >= 60) return 'bg-yellow-500';
     return 'bg-red-500';
   }
 
   function getConfidenceColor(confidence: number): string {
-    if (confidence >= 80) return 'text-green-500';
+    if (confidence >= HIGH_CONFIDENCE_THRESHOLD) return 'text-green-500';
     if (confidence >= 50) return 'text-yellow-500';
     return 'text-red-500';
   }

@@ -1,4 +1,5 @@
 import type { Issue, QACriterion } from '$lib/types';
+import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
 export interface ReportData {
   issues: Issue[];
@@ -190,7 +191,7 @@ export function generateReportHTML(data: ReportData): string {
 
     <h2>Executive Summary</h2>
     <div class="summary">
-      <div class="summary-card ${complianceScore >= 80 ? 'compliance-high' : complianceScore >= 60 ? 'compliance-medium' : 'compliance-low'}">
+      <div class="summary-card ${complianceScore >= HIGH_CONFIDENCE_THRESHOLD ? 'compliance-high' : complianceScore >= 60 ? 'compliance-medium' : 'compliance-low'}">
         <div class="label">Compliance Score</div>
         <div class="value">${complianceScore}%</div>
       </div>
