@@ -16,7 +16,7 @@
   import { pageToBase64 } from '$lib/utils/page-to-image';
   import type { Issue, AnalysisResponse } from '$lib/types';
   import { t } from '$lib/config/app-config';
-  import { MAX_PAGES, PAGE_RENDER_CONCURRENCY } from '$lib/config/constants';
+  import { MAX_PAGES, computeAnalysisConcurrency } from '$lib/config/constants';
 
 
   let rightTab = $state<'issues' | 'criteria'>('issues');
@@ -89,6 +89,7 @@
       // Shared counter so ISS-001, ISS-002... are globally unique across pages
       let issueCounter = 1;
       let failedPages = 0;
+      let lastFailureMessage: string | null = null;
 
       // One task per page: render → POST → append results live
       const tasks = Array.from({ length: pagesToAnalyze }, (_, idx) => async () => {
@@ -121,11 +122,28 @@
             issuesStore.appendIssues(renumbered);
           } else {
             failedPages++;
-            console.error(`Page ${pageNum} analysis failed: ${res.status}`);
+            let message = `Page ${pageNum} analysis failed (${res.status}).`;
+            try {
+              const bodyText = await res.text();
+              if (bodyText) {
+                try {
+                  const parsed = JSON.parse(bodyText) as { message?: string };
+                  message = parsed.message ?? bodyText;
+                } catch {
+                  message = bodyText;
+                }
+              }
+            } catch {
+              // keep default message
+            }
+            lastFailureMessage = message;
+            console.error(`Page ${pageNum} analysis failed:`, message);
           }
         } catch (fetchErr) {
           if (abortController.signal.aborted) return;
           failedPages++;
+          lastFailureMessage =
+            fetchErr instanceof Error ? fetchErr.message : 'Network error while analyzing page';
           console.error(`Page ${pageNum} fetch error:`, fetchErr);
         }
 
@@ -141,9 +159,18 @@
           await tasks[i]();
         }
       }
-      await Promise.all(Array.from({ length: PAGE_RENDER_CONCURRENCY }, worker));
+      const workerCount = computeAnalysisConcurrency(tasks.length);
+      await Promise.all(Array.from({ length: workerCount }, worker));
 
       if (!abortController.signal.aborted) {
+        if (failedPages === pagesToAnalyze) {
+          issuesStore.setAnalysisState({
+            status: 'error',
+            error: lastFailureMessage ?? 'Unable to analyze this document.',
+            emptyIssues: false,
+          });
+          return;
+        }
         issuesStore.setAnalysisState({
           status: 'done',
           emptyIssues: issuesStore.getIssueCount() === 0,
@@ -230,8 +257,6 @@
     }
   }
 
-  // Welcome screen file input
-  let welcomeFileInput = $state<HTMLInputElement>(undefined!);
   function handleWelcomeFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -256,20 +281,19 @@
         </p>
 
         <div class="flex items-center justify-center">
-          <button
-            class="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors"
-            onclick={() => welcomeFileInput.click()}
+          <label
+            class="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors cursor-pointer"
             data-testid="welcome-upload"
           >
             {t.welcome.uploadButton}
-          </button>
-          <input
-            bind:this={welcomeFileInput}
-            type="file"
-            accept=".pdf"
-            class="hidden"
-            onchange={handleWelcomeFileChange}
-          />
+            <input
+              type="file"
+              accept=".pdf"
+              class="hidden"
+              data-testid="welcome-upload-input"
+              onchange={handleWelcomeFileChange}
+            />
+          </label>
         </div>
 
         {#if uploadError}
@@ -329,21 +353,8 @@
         <PageThumbnails pdfSource={pdfSource} documentId={documentId} />
       </div>
 
-      <!-- Center: PDF viewer (wrapper needed for loading overlay positioning) -->
-      <div class="relative flex-1 flex overflow-hidden">
-        <DocumentViewer pdfSource={pdfSource} {documentId} {fitRequested} onError={handleViewerError} onReady={() => pdfLoading = false} />
-        {#if pdfLoading}
-          <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-gray-800/50 z-10" data-testid="pdf-loading">
-            <div class="flex flex-col items-center gap-3">
-              <svg class="h-8 w-8 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
-              <span class="text-sm font-medium text-white">Loading PDF…</span>
-            </div>
-          </div>
-        {/if}
-      </div>
+      <!-- Center: PDF viewer -->
+      <DocumentViewer pdfSource={pdfSource} {documentId} {fitRequested} {pdfLoading} onError={handleViewerError} onReady={() => pdfLoading = false} />
 
       <!-- Right sidebar: issue detail / criteria -->
       <div class="flex w-52 shrink-0 flex-col border-l border-gray-200 bg-white lg:w-64" data-testid="right-sidebar">

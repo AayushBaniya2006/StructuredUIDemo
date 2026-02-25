@@ -36,7 +36,7 @@ export async function renderPage({ page, canvas, scale }: RenderOptions): Promis
     outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
 
   const renderContext = {
-    canvas,
+    canvas: null as unknown as HTMLCanvasElement,
     canvasContext: context,
     transform,
     viewport,

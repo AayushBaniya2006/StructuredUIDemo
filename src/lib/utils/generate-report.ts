@@ -1,8 +1,8 @@
 import type { Issue, QACriterion } from '$lib/types';
 import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
-function escapeHtml(text: string): string {
-  return text
+export function escapeHtml(value: unknown): string {
+  return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -44,6 +44,7 @@ export function generateReportHTML(data: ReportData): string {
   const complianceScore = criteria.length > 0
     ? Math.round((criteria.filter((c) => c.result === 'pass').length / criteria.length) * 100)
     : 0;
+  const generatedLabel = escapeHtml(new Date(generatedAt).toLocaleString());
 
   return `
 <!DOCTYPE html>
@@ -193,7 +194,7 @@ export function generateReportHTML(data: ReportData): string {
         <div class="logo">Structured AI</div>
       </div>
       <div class="meta">
-        <p>Generated: ${new Date(generatedAt).toLocaleString()}</p>
+        <p>Generated: ${generatedLabel}</p>
         <p>Total Issues: ${issues.length}</p>
       </div>
     </div>
@@ -235,10 +236,10 @@ export function generateReportHTML(data: ReportData): string {
           <tr>
             <td>${escapeHtml(issue.id)}</td>
             <td>${escapeHtml(issue.title)}</td>
-            <td>${issue.page}</td>
-            <td class="severity-${issue.severity}">${issue.severity.toUpperCase()}</td>
+            <td>${escapeHtml(issue.page)}</td>
+            <td class="severity-${escapeHtml(issue.severity)}">${escapeHtml(issue.severity.toUpperCase())}</td>
             <td>${escapeHtml(issue.category)}</td>
-            <td class="status-${issue.status}">${issue.status.toUpperCase()}</td>
+            <td class="status-${escapeHtml(issue.status)}">${escapeHtml(issue.status.toUpperCase())}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -257,9 +258,9 @@ export function generateReportHTML(data: ReportData): string {
       <tbody>
         ${criteria.map(c => `
           <tr>
-            <td>Page ${c.page}</td>
+            <td>Page ${escapeHtml(c.page)}</td>
             <td>${escapeHtml(c.name)}</td>
-            <td><span class="criterion-${c.result === 'pass' ? 'pass' : c.result === 'fail' ? 'fail' : 'na'}">${c.result.toUpperCase()}</span></td>
+            <td><span class="criterion-${c.result === 'pass' ? 'pass' : c.result === 'fail' ? 'fail' : 'na'}">${escapeHtml(c.result.toUpperCase())}</span></td>
             <td>${escapeHtml(c.summary)}</td>
           </tr>
         `).join('')}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { viewerStore, renderScale } from '$lib/stores/viewer';
   import { issuesStore } from '$lib/stores/issues';
   import { loadDocument, renderPage, getPageDimensions, getDocumentKey } from '$lib/utils/pdf-renderer';
@@ -13,12 +13,14 @@
     pdfSource,
     documentId,
     fitRequested = 0,
+    pdfLoading = false,
     onError,
     onReady,
   }: {
     pdfSource?: string | ArrayBuffer;
     documentId: number;
     fitRequested?: number;
+    pdfLoading?: boolean;
     onError?: (message: string | null) => void;
     onReady?: () => void;
   } = $props();
@@ -86,13 +88,13 @@
   $effect(() => {
     if (documentId !== lastDocumentId) {
       lastDocumentId = documentId;
-      loadPdf();
+      untrack(() => loadPdf());
     }
   });
 
   $effect(() => {
     if (pdfDoc && currentPage) {
-      renderCurrentPage();
+      untrack(() => renderCurrentPage());
     }
   });
 
@@ -101,7 +103,7 @@
   $effect(() => {
     if (fitRequested > 0 && fitRequested !== lastFitRequested) {
       lastFitRequested = fitRequested;
-      fitToViewport();
+      untrack(() => fitToViewport());
     }
   });
 
@@ -297,6 +299,18 @@
     >
       <canvas bind:this={canvasEl} class="block"></canvas>
       <BboxOverlay width={canvasWidth} height={canvasHeight} page={currentPage} />
+    </div>
+  {/if}
+
+  {#if pdfLoading}
+    <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-gray-800/50 z-10" data-testid="pdf-loading">
+      <div class="flex flex-col items-center gap-3">
+        <svg class="h-8 w-8 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span class="text-sm font-medium text-white">Loading PDF…</span>
+      </div>
     </div>
   {/if}
 

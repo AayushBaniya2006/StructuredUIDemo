@@ -17,7 +17,8 @@
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
 		"lint": "eslint src",
-		"format": "prettier --write src"
+		"format": "prettier --write src",
+		"validate": "npm run check && npm run lint && npm run test && npm run build"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -46,6 +47,7 @@
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
-		"pdfjs-dist": "^5.4.624"
+		"pdfjs-dist": "^5.4.624",
+		"zod": "^4.3.6"
 	}
 }

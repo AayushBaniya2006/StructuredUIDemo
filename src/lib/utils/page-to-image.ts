@@ -1,4 +1,8 @@
-import { TARGET_IMAGE_PX } from '$lib/config/constants';
+import {
+  ANALYSIS_IMAGE_MIME_TYPE,
+  ANALYSIS_IMAGE_QUALITY,
+  TARGET_IMAGE_PX,
+} from '$lib/config/constants';
 import type { PDFPageProxy } from 'pdfjs-dist';
 
 /**
@@ -27,6 +31,24 @@ export async function pageToBase64(page: PDFPageProxy): Promise<string> {
     viewport: scaledViewport,
   }).promise;
 
-  // Return as data URL (base64 PNG)
-  return canvas.toDataURL('image/png');
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (result) => {
+        if (!result) {
+          reject(new Error('Failed to encode canvas image'));
+          return;
+        }
+        resolve(result);
+      },
+      ANALYSIS_IMAGE_MIME_TYPE,
+      ANALYSIS_IMAGE_QUALITY
+    );
+  });
+
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read encoded image blob'));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(blob);
+  });
 }

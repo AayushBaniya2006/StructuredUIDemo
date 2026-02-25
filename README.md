@@ -44,6 +44,7 @@ Then open http://localhost:5173 and upload a PDF blueprint to begin analysis.
 ## Validation Commands
 
 ```bash
+npm run validate
 npm run check
 npm run test
 npm run test:e2e
@@ -81,6 +82,9 @@ npx tsx e2e/fixtures/generate-fixture.ts
 
 - `GEMINI_API_KEY` — Your Google Gemini API key (required for AI analysis)
 - `GEMINI_MODEL` — The Gemini model to use (default: `gemini-2.5-flash`)
+- `ANALYSIS_PROVIDER` — `gemini` or `mock` (default: `gemini`)
+- `MOCK_ANALYSIS` — Set `true` to force mock analysis responses (useful for demos/tests)
+- `ANALYSIS_LOG_LEVEL` — `info` or `debug` (optional)
 
 ### App Configuration
 
@@ -104,3 +108,4 @@ QA criteria definitions are in `src/lib/config/qa-criteria.ts`. Modify this file
   ```bash
   npx playwright install chromium
   ```
+- E2E tests now mock `/api/analyze`, so they do not require a real Gemini API key.

@@ -57,6 +57,7 @@
           class="w-full border-0"
           style="height: 70vh;"
           srcdoc={previewHTML}
+          sandbox=""
           title="Report Preview"
         ></iframe>
       </div>

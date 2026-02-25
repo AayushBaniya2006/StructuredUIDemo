@@ -88,10 +88,25 @@ export type QACriterion = {
 export type AnalysisResponse = {
   criteria: QACriterion[];
   issues: Issue[];
+  pageResults?: AnalysisPageResultSummary[];
   metadata?: {
+    requestId?: string;
     totalPages: number;
     analyzedPages: number;
     failedPages: number;
     emptyIssues: boolean;
+    timings?: {
+      totalMs: number;
+      avgPageMs: number;
+    };
   };
+};
+
+export type AnalysisPageResultSummary = {
+  pageNumber: number;
+  status: 'ok' | 'error' | 'unrecognized';
+  issueCount: number;
+  criterionCount: number;
+  durationMs?: number;
+  error?: string;
 };

@@ -1,312 +1,188 @@
-import { json, error } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type {
-  QACriterion,
-  Issue,
-  IssueSeverity,
-  IssueCategory,
-  AnalysisResponse,
-  SheetType,
-} from '$lib/types';
-import { env } from '$env/dynamic/private';
-import { qaCriteria } from '$lib/config/qa-criteria';
-import { MAX_PAGES, UNRECOGNIZED_CONTENT_THRESHOLD } from '$lib/config/constants';
+import type { AnalysisPageResultSummary, AnalysisResponse, QACriterion, Issue } from '$lib/types';
+import { ZodError } from 'zod';
+import { getServerEnv } from '$lib/server/env';
+import { createAnalysisProvider } from '$lib/server/analysis/provider-factory';
+import {
+  analyzeRequestSchema,
+  providerPageResultSchema,
+  type AnalyzeRequest,
+} from '$lib/server/analysis/schemas';
+import { logger } from '$lib/server/logging';
+import {
+  makePageErrorCriterion,
+  mapProviderPageResult,
+} from '$lib/server/analysis/mappers';
 
-const GEMINI_MODEL = env.GEMINI_MODEL ?? 'gemini-3-flash-preview';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const API_MESSAGES = {
+  missingApiKey: 'GEMINI_API_KEY is not configured. Set it in your .env file.',
+  invalidRequest: 'Invalid analysis request payload.',
+  invalidDocument: 'Unable to analyze this document. Please upload a valid construction blueprint PDF.',
+  malformedModelResponse: 'Analysis failed: malformed AI response for this page.',
+  upstreamFailure: 'Analysis failed due to an upstream AI service error.',
+} as const;
 
-const VALID_SHEET_TYPES = new Set<SheetType>([
-  'architectural',
-  'electrical',
-  'mechanical',
-  'structural',
-  'plumbing',
-  'civil',
-  'cover',
-  'schedule',
-  'unknown',
-]);
-
-function buildPrompt(pageNumber: number): string {
-  const criteriaList = qaCriteria
-    .map((c) => `- ${c.id}: ${c.name} — ${c.description}`)
-    .join('\n');
-
-  return `You are a senior construction QA/QC engineer reviewing a blueprint sheet.
-
-STEP 1 — Identify the sheet:
-Determine the sheet type from the title block or drawing content.
-Sheet types: architectural, electrical, mechanical, structural, plumbing, civil, cover, schedule, unknown.
-
-STEP 2 — Evaluate each criterion (page ${pageNumber}):
-${criteriaList}
-
-For each criterion, determine:
-- "pass" if the requirement is met
-- "fail" if there is a clear, visible deficiency (only flag genuine problems, not hypotheticals)
-- "not-applicable" if the criterion does not apply to this sheet type
-
-STEP 3 — For each FAILED criterion, identify specific issues with TIGHT bounding boxes.
-Bounding box rules:
-- Draw the SMALLEST box that wraps the exact problematic element or missing region
-- Do NOT box the entire page, entire drawing area, or large blank regions
-- box_2d format: [ymin, xmin, ymax, xmax] on a 0–1000 scale (0=top-left, 1000=bottom-right)
-
-Return ONLY valid JSON matching this exact schema (no markdown, no explanation):
-{
-  "sheetType": "electrical",
-  "criteria": [
-    {
-      "id": "EQ-${pageNumber}",
-      "criterionKey": "EQ",
-      "name": "Equipment/Element Labels",
-      "result": "pass",
-      "summary": "One specific sentence. Name the exact element or location (e.g. 'CRAC unit at grid B-3 has no circuit label').",
-      "confidence": 85
-    }
-  ],
-  "issues": [
-    {
-      "title": "Max 6 words describing the problem",
-      "description": "2-3 sentences: what is wrong, where it is, why it matters for construction.",
-      "severity": "high",
-      "category": "missing-label",
-      "criterionKey": "EQ",
-      "box_2d": [100, 200, 300, 400],
-      "confidence": 90
-    }
-  ]
+function createRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
 }
 
-Severity guide:
-- high = safety risk or building code violation
-- medium = missing info that would trigger an RFI or cause rework
-- low = minor annotation gap or cosmetic issue
-
-Confidence guide:
-- 80-100 = clearly visible in the drawing
-- 50-79 = visible but some ambiguity
-- 0-49 = inferred or unclear
-
-RULES:
-- Only include issues for FAILED criteria
-- Issue titles must be 6 words or fewer
-- box_2d MUST tightly wrap the specific problem element
-- If no issues found, return "issues": []
-- Every criterion and issue MUST include a confidence score`;
+function roundMs(ms: number): number {
+  return Math.round(ms);
 }
 
-type GeminiIssue = {
-  title: string;
-  description: string;
-  severity: string;
-  category: string;
-  criterionKey: string;
-  box_2d: [number, number, number, number];
-  confidence?: number;
-};
-
-type GeminiCriterion = {
-  id: string;
-  criterionKey: string;
-  name: string;
-  result: string;
-  summary: string;
-  confidence?: number;
-};
-
-type GeminiPageResult = {
-  sheetType?: string;
-  criteria: GeminiCriterion[];
-  issues: GeminiIssue[];
-};
-
-function convertBbox(box: [number, number, number, number]) {
-  const [ymin, xmin, ymax, xmax] = box;
-  return {
-    x: Math.max(0, Math.min(1, xmin / 1000)),
-    y: Math.max(0, Math.min(1, ymin / 1000)),
-    width: Math.max(0, Math.min(1, (xmax - xmin) / 1000)),
-    height: Math.max(0, Math.min(1, (ymax - ymin) / 1000)),
-  };
+function toErrorMessage(err: unknown): string {
+  if (err instanceof ZodError) {
+    return API_MESSAGES.malformedModelResponse;
+  }
+  if (err instanceof Error) {
+    if (err.message.includes('Gemini API error')) return API_MESSAGES.upstreamFailure;
+    return `Analysis failed: ${err.message}`;
+  }
+  return 'Analysis failed: Unknown error';
 }
 
-const VALID_SEVERITIES = new Set(['high', 'medium', 'low']);
-const VALID_CATEGORIES = new Set(['clash', 'missing-label', 'code-violation', 'clearance']);
-const VALID_RESULTS = new Set(['pass', 'fail', 'not-applicable']);
-
-async function analyzePage(
-  pageNumber: number,
-  imageBase64: string,
-  apiKey: string
-): Promise<GeminiPageResult> {
-  const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-  const body = {
-    contents: [
-      {
-        parts: [
-          { text: buildPrompt(pageNumber) },
-          { inline_data: { mime_type: 'image/png', data: base64Data } },
-        ],
-      },
-    ],
-    generationConfig: {
-      response_mime_type: 'application/json',
-      temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 0 },
-    },
-  };
-
-  const res = await fetch(GEMINI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${errText}`);
+async function parseAnalyzeRequest(request: Request): Promise<AnalyzeRequest> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    throw error(400, API_MESSAGES.invalidRequest);
   }
 
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('No text in Gemini response');
-
-  return JSON.parse(text) as GeminiPageResult;
+  try {
+    return analyzeRequestSchema.parse(body);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      throw error(400, API_MESSAGES.invalidRequest);
+    }
+    throw err;
+  }
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-  const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw error(500, 'GEMINI_API_KEY is not configured. Set it in your .env file.');
+  const requestId = createRequestId();
+  const startedAt = performance.now();
+  const { pages } = await parseAnalyzeRequest(request);
+
+  const envConfig = getServerEnv();
+  let provider;
+  try {
+    provider = createAnalysisProvider(envConfig);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : API_MESSAGES.missingApiKey;
+    logger.error('analysis.provider_init_failed', { requestId, message });
+    throw error(500, message);
   }
 
-  const { pages } = (await request.json()) as {
-    pages: { pageNumber: number; image: string }[];
-  };
+  logger.info('analysis.request_received', {
+    requestId,
+    provider: provider.name,
+    pageCount: pages.length,
+  });
 
-  if (!pages || !Array.isArray(pages) || pages.length === 0) {
-    throw error(400, 'Request must include a non-empty "pages" array.');
-  }
-
-  if (pages.length > MAX_PAGES) {
-    throw error(400, `Too many pages. Maximum is ${MAX_PAGES} per request.`);
-  }
+  const settledPageResults = await Promise.allSettled(
+    pages.map(async (page) => {
+      const pageStarted = performance.now();
+      const raw = await provider.analyzePage({
+        pageNumber: page.pageNumber,
+        image: page.image,
+        requestId,
+      });
+      const parsed = providerPageResultSchema.parse(raw);
+      return {
+        pageNumber: page.pageNumber,
+        parsed,
+        durationMs: roundMs(performance.now() - pageStarted),
+      };
+    })
+  );
 
   const allCriteria: QACriterion[] = [];
   const allIssues: Issue[] = [];
-  let issueCounter = 1;
+  const pageResults: AnalysisPageResultSummary[] = [];
+  const issueCounterRef = { value: 1 };
   let failedPageCount = 0;
-  const totalPages = pages.length;
-
-  // Analyze all pages in parallel
-  const pageResults = await Promise.allSettled(
-    pages.map((page) => analyzePage(page.pageNumber, page.image, apiKey))
-  );
 
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
-    const settled = pageResults[i];
+    const settled = settledPageResults[i];
 
     if (settled.status === 'rejected') {
-      const err = settled.reason;
-      console.error(`Analysis failed for page ${page.pageNumber}:`, err);
-      allCriteria.push({
-        id: `ERR-${page.pageNumber}`,
-        name: 'Analysis Error',
-        description: 'Failed to analyze this page',
-        result: 'not-applicable',
-        summary: `Analysis failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        page: page.pageNumber,
+      const userMessage = toErrorMessage(settled.reason);
+      logger.error('analysis.page_failed', {
+        requestId,
+        pageNumber: page.pageNumber,
+        reason: settled.reason instanceof Error ? settled.reason.message : String(settled.reason),
+      });
+      allCriteria.push(makePageErrorCriterion(page.pageNumber, userMessage));
+      pageResults.push({
+        pageNumber: page.pageNumber,
+        status: 'error',
+        issueCount: 0,
+        criterionCount: 1,
+        error: userMessage,
       });
       failedPageCount++;
       continue;
     }
 
-    const result = settled.value;
-    const sheetType: SheetType = VALID_SHEET_TYPES.has(result.sheetType as SheetType)
-      ? (result.sheetType as SheetType)
-      : 'unknown';
-
-    const notApplicableCount = result.criteria.filter((c) => c.result === 'not-applicable').length;
-    const totalCriteria = result.criteria.length;
-    const notApplicableRatio = totalCriteria > 0 ? notApplicableCount / totalCriteria : 0;
-
-    if (notApplicableRatio > UNRECOGNIZED_CONTENT_THRESHOLD) {
-      allCriteria.push({
-        id: `WARN-${page.pageNumber}`,
-        name: 'Content Recognition Warning',
-        description: 'Unable to recognize this as a construction blueprint',
-        result: 'not-applicable',
-        summary:
-          'The AI was unable to reliably identify this page as a construction blueprint. ' +
-          'Possible causes: not a blueprint, low image quality, or unsupported drawing type.',
-        page: page.pageNumber,
-        sheetType,
-      });
-      failedPageCount++;
-      continue;
-    }
-
-    for (const c of result.criteria) {
-      const validResult = VALID_RESULTS.has(c.result)
-        ? (c.result as QACriterion['result'])
-        : 'not-applicable';
-
-      const criterionConfidence = c.confidence ?? 50;
-
-      allCriteria.push({
-        id: c.id || `${c.criterionKey}-${page.pageNumber}`,
-        name: c.name,
-        description: qaCriteria.find((q) => q.id === c.criterionKey)?.description ?? '',
-        result: validResult,
-        summary: c.summary ?? '',
-        page: page.pageNumber,
-        confidence: criterionConfidence,
-        sheetType,
-      });
-    }
-
-    for (const issue of result.issues) {
-      const severity: IssueSeverity = VALID_SEVERITIES.has(issue.severity)
-        ? (issue.severity as IssueSeverity)
-        : 'medium';
-      const category: IssueCategory = VALID_CATEGORIES.has(issue.category)
-        ? (issue.category as IssueCategory)
-        : 'missing-label';
-
-      allIssues.push({
-        id: `ISS-${String(issueCounter++).padStart(3, '0')}`,
-        page: page.pageNumber,
-        title: issue.title,
-        description: issue.description,
-        severity,
-        status: 'open',
-        category,
-        bbox: convertBbox(issue.box_2d),
-        criterionId: `${issue.criterionKey}-${page.pageNumber}`,
-        confidence: issue.confidence ?? 50,
-        sheetType,
-      });
-    }
-  }
-
-  if (failedPageCount === totalPages) {
-    throw error(
-      400,
-      'Unable to analyze this document. Please upload a valid construction blueprint PDF.'
+    const mapped = mapProviderPageResult(
+      page.pageNumber,
+      settled.value.parsed,
+      issueCounterRef,
+      settled.value.durationMs
     );
+    allCriteria.push(...mapped.criteria);
+    allIssues.push(...mapped.issues);
+    pageResults.push(mapped.pageSummary);
+    if (mapped.unrecognized) failedPageCount++;
   }
+
+  if (failedPageCount === pages.length) {
+    logger.warn('analysis.all_pages_failed', {
+      requestId,
+      pageCount: pages.length,
+      provider: provider.name,
+    });
+    throw error(400, API_MESSAGES.invalidDocument);
+  }
+
+  const totalMs = roundMs(performance.now() - startedAt);
+  const avgPageMs =
+    pageResults.length > 0
+      ? roundMs(
+          pageResults.reduce((sum, p) => sum + (p.durationMs ?? 0), 0) / pageResults.length
+        )
+      : 0;
+
+  logger.info('analysis.completed', {
+    requestId,
+    provider: provider.name,
+    totalPages: pages.length,
+    failedPages: failedPageCount,
+    issueCount: allIssues.length,
+    durationMs: totalMs,
+  });
 
   return json({
     criteria: allCriteria,
     issues: allIssues,
+    pageResults,
     metadata: {
-      totalPages,
-      analyzedPages: totalPages - failedPageCount,
+      requestId,
+      totalPages: pages.length,
+      analyzedPages: pages.length - failedPageCount,
       failedPages: failedPageCount,
       emptyIssues: allIssues.length === 0,
+      timings: {
+        totalMs,
+        avgPageMs,
+      },
     },
   } satisfies AnalysisResponse);
 };
