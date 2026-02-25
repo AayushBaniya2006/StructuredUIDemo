@@ -23,9 +23,9 @@ export function createMockIssues(count: number): Issue[] {
     createMockIssue({
       id: `ISS-${String(i + 1).padStart(3, '0')}`,
       page: Math.floor(i / 5) + 1,
-      severity: ['high', 'medium', 'low'][i % 3] as any,
+      severity: (['high', 'medium', 'low'] as const)[i % 3],
       status: 'open',
-      category: ['clash', 'missing-label', 'code-violation'][i % 3] as any
+      category: (['clash', 'missing-label', 'code-violation'] as const)[i % 3]
     })
   );
 }
