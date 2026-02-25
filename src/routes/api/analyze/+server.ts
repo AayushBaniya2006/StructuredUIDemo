@@ -12,7 +12,7 @@ import { env } from '$env/dynamic/private';
 import { qaCriteria } from '$lib/config/qa-criteria';
 import { MAX_PAGES, UNRECOGNIZED_CONTENT_THRESHOLD } from '$lib/config/constants';
 
-const GEMINI_MODEL = env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+const GEMINI_MODEL = env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const VALID_SHEET_TYPES = new Set<SheetType>([
@@ -154,6 +154,7 @@ async function analyzePage(
     generationConfig: {
       response_mime_type: 'application/json',
       temperature: 0.1,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
