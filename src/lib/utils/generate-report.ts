@@ -1,6 +1,15 @@
 import type { Issue, QACriterion } from '$lib/types';
 import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export interface ReportData {
   issues: Issue[];
   criteria: QACriterion[];
@@ -224,11 +233,11 @@ export function generateReportHTML(data: ReportData): string {
       <tbody>
         ${issues.map(issue => `
           <tr>
-            <td>${issue.id}</td>
-            <td>${issue.title}</td>
+            <td>${escapeHtml(issue.id)}</td>
+            <td>${escapeHtml(issue.title)}</td>
             <td>${issue.page}</td>
             <td class="severity-${issue.severity}">${issue.severity.toUpperCase()}</td>
-            <td>${issue.category}</td>
+            <td>${escapeHtml(issue.category)}</td>
             <td class="status-${issue.status}">${issue.status.toUpperCase()}</td>
           </tr>
         `).join('')}
@@ -249,9 +258,9 @@ export function generateReportHTML(data: ReportData): string {
         ${criteria.map(c => `
           <tr>
             <td>Page ${c.page}</td>
-            <td>${c.name}</td>
+            <td>${escapeHtml(c.name)}</td>
             <td><span class="criterion-${c.result === 'pass' ? 'pass' : c.result === 'fail' ? 'fail' : 'na'}">${c.result.toUpperCase()}</span></td>
-            <td>${c.summary}</td>
+            <td>${escapeHtml(c.summary)}</td>
           </tr>
         `).join('')}
       </tbody>

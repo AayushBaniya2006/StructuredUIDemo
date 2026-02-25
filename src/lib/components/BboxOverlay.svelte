@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { derived } from 'svelte/store';
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
   import { bboxToPixels } from '$lib/utils/coordinates';

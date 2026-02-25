@@ -21,7 +21,9 @@
 
   let rightTab = $state<'issues' | 'criteria'>('issues');
   let documentLoaded = $state(false);
+  let pdfLoading = $state(false);
   let pageCapWarning = $state<string | null>(null);
+  let failedPagesWarning = $state<string | null>(null);
   let pdfSource = $state<string | ArrayBuffer>('');
   let documentId = $state(0);
   let fitRequested = $state(0);
@@ -49,6 +51,7 @@
     blobUrl = objectUrl;
     pdfSource = objectUrl;
     documentId += 1;
+    pdfLoading = true;
     documentLoaded = true;
 
     // Run AI analysis on the uploaded PDF
@@ -61,6 +64,7 @@
     // Reset state for fresh analysis
     issuesStore.loadIssues([]);
     pageCapWarning = null;
+    failedPagesWarning = null;
     rightTab = 'criteria';
 
     const abortController = new AbortController();
@@ -84,6 +88,7 @@
 
       // Shared counter so ISS-001, ISS-002... are globally unique across pages
       let issueCounter = 1;
+      let failedPages = 0;
 
       // One task per page: render → POST → append results live
       const tasks = Array.from({ length: pagesToAnalyze }, (_, idx) => async () => {
@@ -115,10 +120,12 @@
             issuesStore.appendCriteria(data.criteria);
             issuesStore.appendIssues(renumbered);
           } else {
+            failedPages++;
             console.error(`Page ${pageNum} analysis failed: ${res.status}`);
           }
         } catch (fetchErr) {
           if (abortController.signal.aborted) return;
+          failedPages++;
           console.error(`Page ${pageNum} fetch error:`, fetchErr);
         }
 
@@ -141,6 +148,9 @@
           status: 'done',
           emptyIssues: issuesStore.getIssueCount() === 0,
         });
+        if (failedPages > 0) {
+          failedPagesWarning = `${failedPages} page${failedPages > 1 ? 's' : ''} could not be analyzed (network error or unsupported content).`;
+        }
       }
     } catch (err) {
       if (abortController.signal.aborted) {
@@ -159,9 +169,9 @@
   }
 
   function cancelAnalysis() {
+    issuesStore.setAnalysisState({ status: 'idle' }); // close modal immediately
     analysisAbortController?.abort();
     analysisAbortController = null;
-    issuesStore.setAnalysisState({ status: 'idle' });
   }
 
   function handleViewerError(message: string | null) {
@@ -180,6 +190,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if (!documentLoaded) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if ((e.target as HTMLElement).isContentEditable) return;
 
     switch (e.key) {
       case 'j': {
@@ -302,6 +313,13 @@
       </div>
     {/if}
 
+    {#if failedPagesWarning}
+      <div class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 flex items-center justify-between">
+        <span>⚠ {failedPagesWarning}</span>
+        <button class="ml-4 text-red-500 hover:text-red-700" onclick={() => failedPagesWarning = null}>✕</button>
+      </div>
+    {/if}
+
     <div class="flex flex-1 overflow-hidden">
       <!-- Left sidebar: issues + thumbnails -->
       <div class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white lg:w-72" data-testid="issues-column">
@@ -311,8 +329,21 @@
         <PageThumbnails pdfSource={pdfSource} documentId={documentId} />
       </div>
 
-      <!-- Center: PDF viewer -->
-      <DocumentViewer pdfSource={pdfSource} {documentId} {fitRequested} onError={handleViewerError} />
+      <!-- Center: PDF viewer (wrapper needed for loading overlay positioning) -->
+      <div class="relative flex-1 flex overflow-hidden">
+        <DocumentViewer pdfSource={pdfSource} {documentId} {fitRequested} onError={handleViewerError} onReady={() => pdfLoading = false} />
+        {#if pdfLoading}
+          <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-gray-800/50 z-10" data-testid="pdf-loading">
+            <div class="flex flex-col items-center gap-3">
+              <svg class="h-8 w-8 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+              <span class="text-sm font-medium text-white">Loading PDF…</span>
+            </div>
+          </div>
+        {/if}
+      </div>
 
       <!-- Right sidebar: issue detail / criteria -->
       <div class="flex w-52 shrink-0 flex-col border-l border-gray-200 bg-white lg:w-64" data-testid="right-sidebar">

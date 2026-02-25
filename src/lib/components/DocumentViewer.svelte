@@ -7,18 +7,20 @@
   import type { Issue } from '$lib/types';
   import BboxOverlay from './BboxOverlay.svelte';
   import { t } from '$lib/config/app-config';
-  import { ZOOM_MAX, PAGE_CACHE_RADIUS } from '$lib/config/constants';
+  import { ZOOM_MAX, PAGE_CACHE_RADIUS, PAGE_CACHE_MAX } from '$lib/config/constants';
 
   let {
     pdfSource,
     documentId,
     fitRequested = 0,
     onError,
+    onReady,
   }: {
     pdfSource?: string | ArrayBuffer;
     documentId: number;
     fitRequested?: number;
     onError?: (message: string | null) => void;
+    onReady?: () => void;
   } = $props();
 
   let containerEl = $state<HTMLDivElement>(undefined!);
@@ -119,6 +121,7 @@
       viewerStore.goToPage(1);
       await renderCurrentPage();
       fitToViewport();
+      onReady?.();
     } catch (e) {
       const key = getDocumentKey(pdfSource ?? '');
       error = `Failed to load PDF (${key}): ${e instanceof Error ? e.message : e}`;
@@ -141,6 +144,15 @@
     for (const pageNumber of [...pageCache.keys()]) {
       if (Math.abs(pageNumber - centerPage) > PAGE_CACHE_RADIUS) {
         pageCache.delete(pageNumber);
+      }
+    }
+    // Absolute cap: evict farthest pages if cache still exceeds limit
+    if (pageCache.size > PAGE_CACHE_MAX) {
+      const sorted = [...pageCache.keys()].sort(
+        (a, b) => Math.abs(a - centerPage) - Math.abs(b - centerPage)
+      );
+      for (const p of sorted.slice(PAGE_CACHE_MAX)) {
+        pageCache.delete(p);
       }
     }
   }
@@ -187,28 +199,31 @@
     }
 
     isRendering = true;
-    do {
-      pendingRender = false;
-      const pageToRender = currentPage;
-      try {
-        currentPageObj = await getPageFromCache(pageToRender);
-        await renderPage({
-          page: currentPageObj,
-          canvas: canvasEl,
-          scale: lastRenderScale,
-        });
-        const dims = getPageDimensions(currentPageObj, lastRenderScale);
-        canvasWidth = dims.width;
-        canvasHeight = dims.height;
-        maybeCenterSelectedIssue();
-        void prefetchNeighbors(pageToRender);
-      } catch (e) {
-        error = `Failed to render page: ${e instanceof Error ? e.message : e}`;
-        onError?.(error);
-      }
-    } while (pendingRender);
-
-    isRendering = false;
+    try {
+      do {
+        pendingRender = false;
+        const pageToRender = currentPage;
+        try {
+          currentPageObj = await getPageFromCache(pageToRender);
+          await renderPage({
+            page: currentPageObj,
+            canvas: canvasEl,
+            scale: lastRenderScale,
+          });
+          const dims = getPageDimensions(currentPageObj, lastRenderScale);
+          canvasWidth = dims.width;
+          canvasHeight = dims.height;
+          maybeCenterSelectedIssue();
+          void prefetchNeighbors(pageToRender);
+        } catch (e) {
+          error = `Failed to render page: ${e instanceof Error ? e.message : e}`;
+          onError?.(error);
+          pendingRender = false; // stop retry loop on render error
+        }
+      } while (pendingRender);
+    } finally {
+      isRendering = false;
+    }
   }
 
   function maybeCenterSelectedIssue() {

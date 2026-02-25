@@ -23,3 +23,6 @@ export const ZOOM_MIN = 0.1;
 
 /** Number of concurrent page-to-image workers */
 export const PAGE_RENDER_CONCURRENCY = 5;
+
+/** Absolute maximum number of PDF pages to keep in the viewer cache */
+export const PAGE_CACHE_MAX = 10;

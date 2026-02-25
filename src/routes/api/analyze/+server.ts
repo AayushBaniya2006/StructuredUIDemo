@@ -158,9 +158,9 @@ async function analyzePage(
     },
   };
 
-  const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+  const res = await fetch(GEMINI_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify(body),
   });
 
@@ -254,9 +254,7 @@ export const POST: RequestHandler = async ({ request }) => {
         ? (c.result as QACriterion['result'])
         : 'not-applicable';
 
-      if (!c.confidence) {
-        console.warn(`Criterion "${c.criterionKey}" on page ${page.pageNumber} has no confidence score`);
-      }
+      const criterionConfidence = c.confidence ?? 50;
 
       allCriteria.push({
         id: c.id || `${c.criterionKey}-${page.pageNumber}`,
@@ -265,7 +263,7 @@ export const POST: RequestHandler = async ({ request }) => {
         result: validResult,
         summary: c.summary ?? '',
         page: page.pageNumber,
-        confidence: c.confidence,
+        confidence: criterionConfidence,
         sheetType,
       });
     }
@@ -278,10 +276,6 @@ export const POST: RequestHandler = async ({ request }) => {
         ? (issue.category as IssueCategory)
         : 'missing-label';
 
-      if (!issue.confidence) {
-        console.warn(`Issue "${issue.title}" on page ${page.pageNumber} has no confidence score`);
-      }
-
       allIssues.push({
         id: `ISS-${String(issueCounter++).padStart(3, '0')}`,
         page: page.pageNumber,
@@ -292,7 +286,7 @@ export const POST: RequestHandler = async ({ request }) => {
         category,
         bbox: convertBbox(issue.box_2d),
         criterionId: `${issue.criterionKey}-${page.pageNumber}`,
-        confidence: issue.confidence,
+        confidence: issue.confidence ?? 50,
         sheetType,
       });
     }
