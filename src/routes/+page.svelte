@@ -9,6 +9,7 @@
   import AnalysisProgress from '$lib/components/AnalysisProgress.svelte';
   import MetricsPanel from '$lib/components/MetricsPanel.svelte';
   import ReportPreview from '$lib/components/ReportPreview.svelte';
+  import KeyboardHelp from '$lib/components/KeyboardHelp.svelte';
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
   import { loadDocument } from '$lib/utils/pdf-renderer';
@@ -29,6 +30,7 @@
   let analysisAbortController: AbortController | null = $state(null);
   let showMetrics = $state(false);
   let showReport = $state(false);
+  let showKeyboardHelp = $state(false);
 
   async function handleFileUpload(file: File) {
     if (file.type && file.type !== 'application/pdf') {
@@ -56,73 +58,90 @@
   async function runAnalysis() {
     if (!pdfSource) return;
 
-    // Reset state
+    // Reset state for fresh analysis
     issuesStore.loadIssues([]);
-    issuesStore.setAnalysisState({ status: 'analyzing', currentPage: 0, totalPages: 0, error: null });
+    pageCapWarning = null;
     rightTab = 'criteria';
 
     const abortController = new AbortController();
     analysisAbortController = abortController;
 
     try {
-      // Load the PDF document
       const doc = await loadDocument(pdfSource);
       const totalPages = doc.numPages;
-      issuesStore.setAnalysisState({ totalPages });
-
-      // Cap pages for analysis
       const pagesToAnalyze = Math.min(totalPages, MAX_PAGES);
+
       if (totalPages > MAX_PAGES) {
-        pageCapWarning = `Large PDF detected (${totalPages} pages). Analyzing first ${MAX_PAGES} pages only.`;
-      } else {
-        pageCapWarning = null;
+        pageCapWarning = `Large PDF (${totalPages} pages). Analyzing first ${MAX_PAGES} pages only.`;
       }
 
-      // Render pages to base64 with concurrency limit of 5
-      issuesStore.setAnalysisState({ currentPage: 1 });
-      const tasks = Array.from({ length: pagesToAnalyze }, (_, idx) => async () => {
-        const pageNum = idx + 1;
-        const page = await doc.getPage(pageNum);
-        const base64 = await pageToBase64(page);
-        return { pageNumber: pageNum, image: base64 };
+      issuesStore.setAnalysisState({
+        status: 'analyzing',
+        totalPages: pagesToAnalyze,
+        analyzedPages: 0,
+        currentPage: 0,
       });
 
-      const pageImages: { pageNumber: number; image: string }[] = new Array(pagesToAnalyze);
+      // Shared counter so ISS-001, ISS-002... are globally unique across pages
+      let issueCounter = 1;
+
+      // One task per page: render → POST → append results live
+      const tasks = Array.from({ length: pagesToAnalyze }, (_, idx) => async () => {
+        const pageNum = idx + 1;
+        if (abortController.signal.aborted) return;
+
+        const page = await doc.getPage(pageNum);
+        const base64 = await pageToBase64(page);
+
+        if (abortController.signal.aborted) return;
+
+        try {
+          const res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pages: [{ pageNumber: pageNum, image: base64 }] }),
+            signal: abortController.signal,
+          });
+
+          if (res.ok) {
+            const data: AnalysisResponse = await res.json();
+
+            // Renumber issues to maintain a global ISS-001, ISS-002... sequence
+            const renumbered = data.issues.map((issue) => ({
+              ...issue,
+              id: `ISS-${String(issueCounter++).padStart(3, '0')}`,
+            }));
+
+            issuesStore.appendCriteria(data.criteria);
+            issuesStore.appendIssues(renumbered);
+          } else {
+            console.error(`Page ${pageNum} analysis failed: ${res.status}`);
+          }
+        } catch (fetchErr) {
+          if (abortController.signal.aborted) return;
+          console.error(`Page ${pageNum} fetch error:`, fetchErr);
+        }
+
+        // Advance progress regardless of success/failure
+        issuesStore.setAnalysisState((s) => ({ analyzedPages: s.analyzedPages + 1 }));
+      });
+
+      // Run with concurrency limit
       let taskIndex = 0;
       async function worker() {
         while (taskIndex < tasks.length) {
           const i = taskIndex++;
-          pageImages[i] = await tasks[i]();
+          await tasks[i]();
         }
       }
       await Promise.all(Array.from({ length: PAGE_RENDER_CONCURRENCY }, worker));
 
-      if (abortController.signal.aborted) return;
-
-      // Show that we're now calling the AI
-      issuesStore.setAnalysisState({ currentPage: 0 });
-
-      // Send to API
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: pageImages }),
-        signal: abortController.signal,
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText);
+      if (!abortController.signal.aborted) {
+        issuesStore.setAnalysisState({
+          status: 'done',
+          emptyIssues: issuesStore.getIssueCount() === 0,
+        });
       }
-
-      const data: AnalysisResponse = await res.json();
-
-      // Load results into stores using the new method that handles metadata
-      issuesStore.loadAnalysisResult({
-        criteria: data.criteria,
-        issues: data.issues,
-        metadata: data.metadata,
-      });
     } catch (err) {
       if (abortController.signal.aborted) {
         issuesStore.setAnalysisState({ status: 'idle' });
@@ -188,6 +207,14 @@
         break;
       case '0':
         handleResetZoom();
+        break;
+      case '?':
+        showKeyboardHelp = !showKeyboardHelp;
+        break;
+      case 'Escape':
+        showKeyboardHelp = false;
+        showMetrics = false;
+        showReport = false;
         break;
     }
   }
@@ -256,6 +283,10 @@
 
     {#if showReport}
       <ReportPreview onClose={() => showReport = false} />
+    {/if}
+
+    {#if showKeyboardHelp}
+      <KeyboardHelp onClose={() => showKeyboardHelp = false} />
     {/if}
 
     {#if uploadError}

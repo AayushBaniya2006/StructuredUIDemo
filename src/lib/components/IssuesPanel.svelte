@@ -3,6 +3,7 @@
   import { issuesStore } from '$lib/stores/issues';
   import { viewerStore } from '$lib/stores/viewer';
   import type { Issue } from '$lib/types';
+  import { SHEET_TYPE_ABBREV } from '$lib/types';
   import { t } from '$lib/config/app-config';
   import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
 
@@ -100,25 +101,21 @@
               <span class="h-2 w-2 shrink-0 rounded-full {getSeverityDot(issue.severity)}"></span>
               <span class="truncate text-sm font-medium text-gray-800">{issue.title}</span>
             </div>
-            <div class="mt-0.5 flex items-center gap-2 pl-4">
-              <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 uppercase">{issue.category}</span>
+            <div class="mt-0.5 flex flex-wrap items-center gap-1.5 pl-4">
+              <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 uppercase">{issue.category.replace('-', ' ')}</span>
+              {#if issue.sheetType && issue.sheetType !== 'unknown'}
+                <span class="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-600">{SHEET_TYPE_ABBREV[issue.sheetType]}</span>
+              {/if}
+              {#if issue.confidence !== undefined}
+                <span class="rounded px-1.5 py-0.5 text-[10px] font-medium
+                  {issue.confidence >= HIGH_CONFIDENCE_THRESHOLD ? 'bg-green-50 text-green-700' : issue.confidence >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}">
+                  {Math.round(issue.confidence)}%
+                </span>
+              {/if}
               {#if issue.status === 'resolved'}
                 <span class="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">Resolved</span>
               {/if}
             </div>
-            {#if issue.confidence !== undefined}
-              <div class="mt-0.5 flex items-center gap-1 pl-4">
-                <div class="h-1 w-8 rounded bg-gray-200">
-                  <div
-                    class="h-full rounded-full"
-                    class:bg-green-400={issue.confidence >= HIGH_CONFIDENCE_THRESHOLD}
-                    class:bg-yellow-400={issue.confidence >= 50 && issue.confidence < HIGH_CONFIDENCE_THRESHOLD}
-                    class:bg-red-400={issue.confidence < 50}
-                    style="width: {issue.confidence}%"
-                  ></div>
-                </div>
-              </div>
-            {/if}
           </button>
         {/each}
       </div>

@@ -57,3 +57,62 @@ describe('issuesStore', () => {
     expect(issuesStore.getSelectedIssue()?.id).toBe(issue.id);
   });
 });
+
+import { mockIssue, mockCriterion } from '$lib/test-utils/mock-data';
+
+describe('appendIssues', () => {
+  beforeEach(() => issuesStore.loadIssues([]));
+
+  it('accumulates issues across multiple appends', () => {
+    issuesStore.appendIssues([mockIssue({ id: 'ISS-001', page: 1 })]);
+    issuesStore.appendIssues([mockIssue({ id: 'ISS-002', page: 2 })]);
+    expect(get(issuesStore.issues)).toHaveLength(2);
+  });
+
+  it('does not reset selectedId on append', () => {
+    issuesStore.appendIssues([mockIssue({ id: 'ISS-001' })]);
+    issuesStore.select('ISS-001');
+    issuesStore.appendIssues([mockIssue({ id: 'ISS-002' })]);
+    expect(get(issuesStore.selectedId)).toBe('ISS-001');
+  });
+});
+
+describe('appendCriteria', () => {
+  beforeEach(() => issuesStore.loadIssues([]));
+
+  it('accumulates criteria across appends', () => {
+    issuesStore.appendCriteria([mockCriterion({ id: 'EQ-1', page: 1 })]);
+    issuesStore.appendCriteria([mockCriterion({ id: 'EQ-2', page: 2 })]);
+    expect(get(issuesStore.criteria)).toHaveLength(2);
+  });
+});
+
+describe('confidence filter', () => {
+  beforeEach(() => {
+    issuesStore.loadIssues([]);
+    issuesStore.appendIssues([
+      mockIssue({ id: 'ISS-001', confidence: 90 }),
+      mockIssue({ id: 'ISS-002', confidence: 60 }),
+      mockIssue({ id: 'ISS-003', confidence: 30 }),
+    ]);
+  });
+
+  it('shows all issues when threshold is 0', () => {
+    issuesStore.setConfidenceFilter(0);
+    expect(get(issuesStore.filtered)).toHaveLength(3);
+  });
+
+  it('filters issues below threshold', () => {
+    issuesStore.setConfidenceFilter(80);
+    const result = get(issuesStore.filtered);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('ISS-001');
+  });
+
+  it('issues without confidence score always pass through filter', () => {
+    issuesStore.appendIssues([mockIssue({ id: 'ISS-004', confidence: undefined })]);
+    issuesStore.setConfidenceFilter(80);
+    const result = get(issuesStore.filtered);
+    expect(result.some((i) => i.id === 'ISS-004')).toBe(true);
+  });
+});

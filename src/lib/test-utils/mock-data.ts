@@ -10,9 +10,13 @@ export function createMockIssue(overrides: Partial<Issue> = {}): Issue {
     status: 'open',
     category: 'missing-label',
     bbox: { x: 0.5, y: 0.5, width: 0.1, height: 0.1 },
+    confidence: 85,
     ...overrides
   };
 }
+
+/** Alias used in new streaming/confidence tests */
+export const mockIssue = createMockIssue;
 
 export function createMockIssues(count: number): Issue[] {
   return Array.from({ length: count }, (_, i) =>
@@ -43,5 +47,18 @@ export function createMockCriterion(page: number, result: 'pass' | 'fail' | 'not
     page,
     result,
     summary: 'Sample summary for testing purposes'
+  };
+}
+
+export function mockCriterion(overrides: Partial<QACriterion> = {}): QACriterion {
+  return {
+    id: 'EQ-1',
+    name: 'Equipment Labels',
+    description: 'All equipment labeled',
+    result: 'fail',
+    summary: 'Missing labels found',
+    page: 1,
+    confidence: 90,
+    ...overrides,
   };
 }

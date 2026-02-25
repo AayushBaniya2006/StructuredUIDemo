@@ -6,19 +6,19 @@
   import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
   import { onDestroy } from 'svelte';
 
-  let { onFileUpload, onResetZoom, onRunAnalysis, onShowMetrics, onExportReport, onShare }: {
+  let { onFileUpload, onResetZoom, onRunAnalysis, onShowMetrics, onExportReport }: {
     onFileUpload?: (file: File) => void;
     onResetZoom?: () => void;
     onRunAnalysis?: () => void;
     onShowMetrics?: () => void;
     onExportReport?: () => void;
-    onShare?: () => void;
   } = $props();
 
   let zoom = $state(1);
   let showAll = $state(true);
   let severityFilter = $state<SeverityFilter>('all');
   let statusFilter = $state<StatusFilter>('all');
+  let confidenceFilter = $state(0);
 
   const unsubViewer = viewerStore.subscribe((v) => {
     zoom = v.zoom;
@@ -26,12 +26,12 @@
   });
   const unsubSev = issuesStore.severityFilter.subscribe((v) => (severityFilter = v));
   const unsubStat = issuesStore.statusFilter.subscribe((v) => (statusFilter = v));
+  const unsubConf = issuesStore.confidenceFilter.subscribe((v) => (confidenceFilter = v));
   let analysisStatus = $state<'idle' | 'analyzing' | 'done' | 'error'>('idle');
   let complianceScore = $state(0);
-  let showShareToast = $state(false);
   const unsubAnalysis = issuesStore.analysisState.subscribe((s) => (analysisStatus = s.status));
   const unsubCompliance = issuesStore.complianceScore.subscribe((s) => (complianceScore = s));
-  onDestroy(() => { unsubViewer(); unsubSev(); unsubStat(); unsubAnalysis(); unsubCompliance(); });
+  onDestroy(() => { unsubViewer(); unsubSev(); unsubStat(); unsubConf(); unsubAnalysis(); unsubCompliance(); });
 
   let fileInput = $state<HTMLInputElement>(undefined!);
 
@@ -39,14 +39,6 @@
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (file && onFileUpload) onFileUpload(file);
-  }
-
-  function handleShare() {
-    const shareUrl = window.location.origin;
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      showShareToast = true;
-      setTimeout(() => showShareToast = false, 3000);
-    });
   }
 
   const severityOptions: { value: SeverityFilter; label: string; color: string }[] = [
@@ -167,6 +159,16 @@
     {/each}
   </div>
 
+  <!-- Confidence filter -->
+  <button
+    class="rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors {confidenceFilter > 0 ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-400' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}"
+    onclick={() => issuesStore.setConfidenceFilter(confidenceFilter > 0 ? 0 : HIGH_CONFIDENCE_THRESHOLD)}
+    title="Toggle high-confidence issues only (≥80%)"
+    data-testid="confidence-filter"
+  >
+    {confidenceFilter > 0 ? `≥${HIGH_CONFIDENCE_THRESHOLD}% conf.` : 'All conf.'}
+  </button>
+
   <div class="flex-1"></div>
 
   <!-- Overlay toggle -->
@@ -200,23 +202,4 @@
     Export
   </button>
 
-  <div class="hidden sm:block h-4 w-px bg-gray-200"></div>
-
-  <!-- Share button -->
-  <button
-    class="rounded px-2.5 py-1 text-[11px] font-medium transition-colors bg-teal-600 text-white hover:bg-teal-700"
-    onclick={handleShare}
-    data-testid="share-analysis"
-  >
-    Share
-  </button>
 </header>
-
-{#if showShareToast}
-  <div class="fixed top-4 right-4 z-50 rounded-lg bg-gray-900 text-white px-4 py-3 shadow-lg flex items-center gap-2">
-    <svg class="h-5 w-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-    </svg>
-    <span class="text-sm">Link copied to clipboard!</span>
-  </div>
-{/if}
