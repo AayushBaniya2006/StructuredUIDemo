@@ -7,6 +7,7 @@
   import type { Issue } from '$lib/types';
   import BboxOverlay from './BboxOverlay.svelte';
   import { t } from '$lib/config/app-config';
+  import { ZOOM_MAX, PAGE_CACHE_RADIUS } from '$lib/config/constants';
 
   let {
     pdfSource,
@@ -29,8 +30,6 @@
   let isRendering = $state(false);
   let error = $state<string | null>(null);
 
-  const ZOOM_MAX = 4;
-  const PAGE_CACHE_RADIUS = 1;
 
   // Pan state for drag
   let isDragging = false;

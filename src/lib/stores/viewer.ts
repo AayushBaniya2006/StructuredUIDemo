@@ -2,9 +2,8 @@ import { writable, derived } from 'svelte/store';
 import type { ViewerState } from '$lib/types';
 import type { BoundingBox } from '$lib/types';
 import { centerOnBbox } from '$lib/utils/coordinates';
+import { ZOOM_MIN, ZOOM_MAX } from '$lib/config/constants';
 
-const ZOOM_MIN = 0.1;
-const ZOOM_MAX = 4;
 const ZOOM_STEP = 0.1;
 const ZOOM_RENDER_THRESHOLDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 

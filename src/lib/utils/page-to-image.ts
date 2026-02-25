@@ -1,3 +1,4 @@
+import { TARGET_IMAGE_PX } from '$lib/config/constants';
 import type { PDFPageProxy } from 'pdfjs-dist';
 
 /**
@@ -7,8 +8,7 @@ import type { PDFPageProxy } from 'pdfjs-dist';
 export async function pageToBase64(page: PDFPageProxy): Promise<string> {
   const viewport = page.getViewport({ scale: 1 });
   const maxDim = Math.max(viewport.width, viewport.height);
-  const targetPx = 1500;
-  const scale = targetPx / maxDim;
+  const scale = TARGET_IMAGE_PX / maxDim;
 
   const scaledViewport = page.getViewport({ scale });
   const width = Math.floor(scaledViewport.width);

@@ -15,9 +15,12 @@
   import { pageToBase64 } from '$lib/utils/page-to-image';
   import type { Issue, AnalysisResponse } from '$lib/types';
   import { t } from '$lib/config/app-config';
+  import { MAX_PAGES, PAGE_RENDER_CONCURRENCY } from '$lib/config/constants';
+
 
   let rightTab = $state<'issues' | 'criteria'>('issues');
   let documentLoaded = $state(false);
+  let pageCapWarning = $state<string | null>(null);
   let pdfSource = $state<string | ArrayBuffer>('');
   let documentId = $state(0);
   let fitRequested = $state(0);
@@ -50,23 +53,6 @@
     await runAnalysis();
   }
 
-  async function handleLoadDemo() {
-    uploadError = null;
-
-    if (blobUrl) {
-      URL.revokeObjectURL(blobUrl);
-      blobUrl = null;
-    }
-
-    pdfSource = '/demo-blueprint.pdf';
-    documentId += 1;
-    documentLoaded = true;
-
-    // Run AI analysis on the demo blueprint
-    await runAnalysis();
-  }
-
-
   async function runAnalysis() {
     if (!pdfSource) return;
 
@@ -84,18 +70,37 @@
       const totalPages = doc.numPages;
       issuesStore.setAnalysisState({ totalPages });
 
-      // Render each page to base64
-      const pageImages: { pageNumber: number; image: string }[] = [];
-      for (let i = 1; i <= totalPages; i++) {
-        if (abortController.signal.aborted) return;
-
-        issuesStore.setAnalysisState({ currentPage: i });
-        const page = await doc.getPage(i);
-        const base64 = await pageToBase64(page);
-        pageImages.push({ pageNumber: i, image: base64 });
+      // Cap pages for analysis
+      const pagesToAnalyze = Math.min(totalPages, MAX_PAGES);
+      if (totalPages > MAX_PAGES) {
+        pageCapWarning = `Large PDF detected (${totalPages} pages). Analyzing first ${MAX_PAGES} pages only.`;
+      } else {
+        pageCapWarning = null;
       }
 
+      // Render pages to base64 with concurrency limit of 5
+      issuesStore.setAnalysisState({ currentPage: 1 });
+      const tasks = Array.from({ length: pagesToAnalyze }, (_, idx) => async () => {
+        const pageNum = idx + 1;
+        const page = await doc.getPage(pageNum);
+        const base64 = await pageToBase64(page);
+        return { pageNumber: pageNum, image: base64 };
+      });
+
+      const pageImages: { pageNumber: number; image: string }[] = new Array(pagesToAnalyze);
+      let taskIndex = 0;
+      async function worker() {
+        while (taskIndex < tasks.length) {
+          const i = taskIndex++;
+          pageImages[i] = await tasks[i]();
+        }
+      }
+      await Promise.all(Array.from({ length: PAGE_RENDER_CONCURRENCY }, worker));
+
       if (abortController.signal.aborted) return;
+
+      // Show that we're now calling the AI
+      issuesStore.setAnalysisState({ currentPage: 0 });
 
       // Send to API
       const res = await fetch('/api/analyze', {
@@ -214,13 +219,6 @@
 
         <div class="flex items-center justify-center">
           <button
-            class="mr-3 rounded-lg bg-green-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-green-700 transition-colors"
-            onclick={handleLoadDemo}
-            data-testid="load-demo-button"
-          >
-            Load Demo Blueprint
-          </button>
-          <button
             class="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors"
             onclick={() => welcomeFileInput.click()}
             data-testid="welcome-upload"
@@ -263,6 +261,13 @@
     {#if uploadError}
       <div class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700" data-testid="upload-error">
         {uploadError}
+      </div>
+    {/if}
+
+    {#if pageCapWarning}
+      <div class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 flex items-center justify-between">
+        <span>⚠ {pageCapWarning}</span>
+        <button class="ml-4 text-amber-600 hover:text-amber-800" onclick={() => pageCapWarning = null}>✕</button>
       </div>
     {/if}
 

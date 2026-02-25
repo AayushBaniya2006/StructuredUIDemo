@@ -16,7 +16,8 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
-		"generate-demo-blueprint": "npx tsx scripts/generate-demo-blueprint.ts"
+		"lint": "eslint src --ext .ts,.svelte",
+		"format": "prettier --write src"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.58.2",
@@ -27,8 +28,14 @@
 		"@tailwindcss/vite": "^4.2.0",
 		"@testing-library/jest-dom": "^6.9.1",
 		"@testing-library/svelte": "^5.3.1",
+		"@typescript-eslint/eslint-plugin": "^8.56.1",
+		"@typescript-eslint/parser": "^8.56.1",
+		"eslint": "^10.0.2",
+		"eslint-plugin-svelte": "^3.15.0",
 		"jsdom": "^28.1.0",
 		"jspdf": "^4.2.0",
+		"prettier": "^3.8.1",
+		"prettier-plugin-svelte": "^3.5.0",
 		"svelte": "^5.51.0",
 		"svelte-check": "^4.3.6",
 		"tailwindcss": "^4.2.0",
