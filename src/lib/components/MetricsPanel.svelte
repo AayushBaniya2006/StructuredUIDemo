@@ -10,18 +10,8 @@
   let issues: Issue[] = $state([]);
   let criteria: QACriterion[] = $state([]);
 
-  const unsubIssues = issuesStore.issues.subscribe((v) => {
-    issues = v;
-    calculateMetrics();
-  });
-  const unsubCriteria = issuesStore.criteria.subscribe((v) => {
-    criteria = v;
-    calculateMetrics();
-  });
-
-  function calculateMetrics() {
-    // Metrics are derived, this function triggers reactivity
-  }
+  const unsubIssues = issuesStore.issues.subscribe((v) => { issues = v; });
+  const unsubCriteria = issuesStore.criteria.subscribe((v) => { criteria = v; });
 
   let metrics = $derived({
     totalIssues: issues.length,
@@ -185,13 +175,13 @@
               class="text-gray-200"
             />
             <path
-              d={`M18 18 m 0 -15.9155 a 15.9155 15.9155 0 0 1 0 31.831`}
+              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
               fill="none"
               stroke="currentColor"
               stroke-width="3"
               stroke-linecap="round"
               class={getConfidenceColor(metrics.avgConfidence)}
-              stroke-dasharray={`${metrics.avgConfidence * 0.316} 100`}
+              stroke-dasharray={`${metrics.avgConfidence} 100`}
             />
             <text
               x="18"

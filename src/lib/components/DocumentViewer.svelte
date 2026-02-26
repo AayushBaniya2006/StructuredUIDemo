@@ -252,9 +252,17 @@
     lastCenteredIssueKey = '';
   }
 
-  // Pan via mouse drag
+  const DRAG_THRESHOLD = 4; // px — must move this far before we treat it as a drag
+  let hasDragged = false;
+
+  // Pan via mouse drag — only start on non-interactive elements
   function handlePointerDown(e: PointerEvent) {
+    // Don't capture if clicking interactive children (buttons, bbox rects)
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, [data-clickable]')) return;
+
     isDragging = true;
+    hasDragged = false;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
     panStartX = panX;
@@ -266,6 +274,8 @@
     if (!isDragging) return;
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
+    if (!hasDragged && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+    hasDragged = true;
     viewerStore.setPan(panStartX + dx, panStartY + dy);
     // User is manually panning — allow re-centering on next issue click
     lastCenteredIssueKey = '';

@@ -34,6 +34,11 @@
   let showReport = $state(false);
   let showKeyboardHelp = $state(false);
 
+  // Auto-switch to Issue Detail tab when an issue is selected
+  const unsubSelectedId = issuesStore.selectedId.subscribe((id) => {
+    if (id) rightTab = 'issues';
+  });
+
   async function handleFileUpload(file: File) {
     if (file.type && file.type !== 'application/pdf') {
       uploadError = t.upload.errorNotPdf;
@@ -203,6 +208,7 @@
 
   function handleViewerError(message: string | null) {
     uploadError = message;
+    if (message) pdfLoading = false;
   }
 
   function handleResetZoom() {
@@ -210,6 +216,7 @@
   }
 
   onDestroy(() => {
+    unsubSelectedId();
     if (blobUrl) URL.revokeObjectURL(blobUrl);
   });
 

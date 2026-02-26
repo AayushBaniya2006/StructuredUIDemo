@@ -60,7 +60,7 @@
   <div class="flex items-center gap-1.5">
     <img src="/logo.svg" alt="Structured AI" class="h-5 w-5" />
     <h1 class="text-xs font-semibold text-gray-900 whitespace-nowrap">{t.toolbar.title}</h1>
-    {#if complianceScore > 0}
+    {#if analysisStatus === 'done'}
       <div class="flex items-center gap-2 ml-4">
         <span class="text-[10px] text-gray-400">Compliance:</span>
         <span class="rounded px-2 py-0.5 text-xs font-bold {complianceScore >= HIGH_CONFIDENCE_THRESHOLD ? 'bg-green-100 text-green-700' : complianceScore >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">

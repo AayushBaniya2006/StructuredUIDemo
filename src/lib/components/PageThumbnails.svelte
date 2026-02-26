@@ -92,21 +92,23 @@
 <div class="border-t border-gray-200 px-3 py-2" data-testid="page-thumbnails">
   <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{t.thumbnails.title}</span>
   <div class="mt-1.5 flex gap-2 overflow-x-auto">
-    {#each Array(totalPages) as _, i}
-      {@const pageNum = i + 1}
-      <button
-        class="shrink-0 rounded border-2 transition-colors {currentPage === pageNum ? 'border-blue-500' : 'border-transparent hover:border-gray-300'}"
-        onclick={() => viewerStore.goToPage(pageNum)}
-        data-testid={`thumbnail-${pageNum}`}
-      >
-        <canvas class="block h-10 w-14 rounded-sm bg-gray-100" use:lazyThumb={pageNum}></canvas>
-        <div class="flex items-center justify-center gap-1">
-          <span class="block text-center text-[9px] text-gray-500">{pageNum}</span>
-          {#if getSheetAbbrev(pageNum)}
-            <span class="text-[8px] font-bold text-blue-600">{getSheetAbbrev(pageNum)}</span>
-          {/if}
-        </div>
-      </button>
-    {/each}
+    {#key documentId}
+      {#each Array(totalPages) as _, i}
+        {@const pageNum = i + 1}
+        <button
+          class="shrink-0 rounded border-2 transition-colors {currentPage === pageNum ? 'border-blue-500' : 'border-transparent hover:border-gray-300'}"
+          onclick={() => viewerStore.goToPage(pageNum)}
+          data-testid={`thumbnail-${pageNum}`}
+        >
+          <canvas class="block h-10 w-14 rounded-sm bg-gray-100" use:lazyThumb={pageNum}></canvas>
+          <div class="flex items-center justify-center gap-1">
+            <span class="block text-center text-[9px] text-gray-500">{pageNum}</span>
+            {#if getSheetAbbrev(pageNum)}
+              <span class="text-[8px] font-bold text-blue-600">{getSheetAbbrev(pageNum)}</span>
+            {/if}
+          </div>
+        </button>
+      {/each}
+    {/key}
   </div>
 </div>

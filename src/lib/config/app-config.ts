@@ -42,8 +42,8 @@ export const appConfig = {
       title: 'Issues',
       countSingular: 'issue',
       countPlural: 'issues',
-      empty: 'No issues match filters',
-      emptyFiltered: 'No issues match filters',
+      empty: 'Upload and analyze a document to find issues',
+      emptyFiltered: 'No issues match current filters',
       emptySuccess: 'No issues found!',
       emptySuccessSubtext: 'The blueprint passed all QA criteria. Great job!',
       pageLabel: 'Page'

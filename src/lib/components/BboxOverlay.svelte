@@ -51,10 +51,29 @@
       default: return '#6b7280';
     }
   }
+
+  function getSeverityBg(severity: string): string {
+    switch (severity) {
+      case 'high': return 'rgba(239,68,68,0.12)';
+      case 'medium': return 'rgba(245,158,11,0.12)';
+      case 'low': return 'rgba(59,130,246,0.12)';
+      default: return 'rgba(107,114,128,0.12)';
+    }
+  }
+
+  function getSelectedBg(severity: string): string {
+    switch (severity) {
+      case 'high': return 'rgba(239,68,68,0.25)';
+      case 'medium': return 'rgba(245,158,11,0.25)';
+      case 'low': return 'rgba(59,130,246,0.25)';
+      default: return 'rgba(107,114,128,0.25)';
+    }
+  }
 </script>
 
 <svg
-  class="pointer-events-none absolute left-0 top-0"
+  class="absolute left-0 top-0"
+  style="pointer-events: none;"
   {width}
   {height}
   viewBox="0 0 {width} {height}"
@@ -64,34 +83,45 @@
     {@const isSelected = issue.id === selectedId}
     {@const isHovered = issue.id === hoveredId}
     {@const visible = showAll || isSelected}
+    {@const color = getSeverityColor(issue.severity)}
 
     {#if visible}
+      <!-- Box rect — always filled with severity tint -->
       <rect
         x={px.x}
         y={px.y}
         width={px.width}
         height={px.height}
-        fill={isSelected ? `${getSeverityColor(issue.severity)}20` : isHovered ? `${getSeverityColor(issue.severity)}15` : 'transparent'}
-        stroke={getSeverityColor(issue.severity)}
-        stroke-width={isSelected ? 3 : isHovered ? 2 : 1.5}
-        stroke-dasharray={isSelected ? 'none' : '6 3'}
-        rx="2"
-        class:animate-pulse={isHovered && !isSelected}
-        opacity={isSelected || isHovered ? 1 : 0.5}
+        fill={isSelected ? getSelectedBg(issue.severity) : isHovered ? getSelectedBg(issue.severity) : getSeverityBg(issue.severity)}
+        stroke={color}
+        stroke-width={isSelected ? 3 : isHovered ? 2.5 : 1.5}
+        rx="3"
+        opacity={isSelected || isHovered ? 1 : 0.85}
+        style="pointer-events: auto; cursor: pointer;"
+        data-clickable
+        role="button"
+        tabindex="-1"
+        onclick={(e: MouseEvent) => { e.stopPropagation(); issuesStore.select(issue.id); viewerStore.goToPage(issue.page); }}
+        onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); issuesStore.select(issue.id); } }}
+        onpointerenter={() => issuesStore.hover(issue.id)}
+        onpointerleave={() => issuesStore.hover(null)}
       />
 
-      {#if isSelected}
-        <foreignObject
-          x={px.x}
-          y={px.y - 24}
-          width={Math.max(px.width, 120)}
-          height="22"
+      <!-- Label — always visible on every box -->
+      {@const labelY = px.y >= 26 ? px.y - 24 : px.y + px.height + 2}
+      <foreignObject
+        x={px.x}
+        y={labelY}
+        width={Math.max(px.width, 150)}
+        height="22"
+      >
+        <div
+          class="pointer-events-none rounded px-1.5 py-0.5 text-xs font-medium text-white truncate w-fit"
+          style="background: {isSelected ? color : `${color}cc`};"
         >
-          <div class="pointer-events-none rounded bg-gray-900/80 px-1.5 py-0.5 text-xs font-medium text-white truncate">
-            {issue.id}: {issue.title}
-          </div>
-        </foreignObject>
-      {/if}
+          {issue.id}: {issue.title}
+        </div>
+      </foreignObject>
     {/if}
   {/each}
 </svg>
