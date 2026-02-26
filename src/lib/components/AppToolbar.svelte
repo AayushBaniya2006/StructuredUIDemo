@@ -6,12 +6,13 @@
   import { HIGH_CONFIDENCE_THRESHOLD } from '$lib/config/constants';
   import { onDestroy } from 'svelte';
 
-  let { onFileUpload, onResetZoom, onRunAnalysis, onShowMetrics, onExportReport }: {
+  let { onFileUpload, onResetZoom, onRunAnalysis, onShowMetrics, onExportReport, onGoHome }: {
     onFileUpload?: (file: File) => void;
     onResetZoom?: () => void;
     onRunAnalysis?: () => void;
     onShowMetrics?: () => void;
     onExportReport?: () => void;
+    onGoHome?: () => void;
   } = $props();
 
   let zoom = $state(1);
@@ -58,10 +59,10 @@
 <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 bg-white px-3 py-1.5" data-testid="app-toolbar">
   <!-- Title -->
   <div class="flex items-center gap-1.5">
-    <a href="/" data-sveltekit-reload class="flex items-center gap-1.5 hover:opacity-80 transition-opacity">
+    <button onclick={() => onGoHome?.()} class="flex items-center gap-1.5 hover:opacity-80 transition-opacity">
       <img src="/logo.svg" alt="Structured AI" class="h-5 w-5" />
       <h1 class="text-xs font-semibold text-gray-900 whitespace-nowrap">{t.toolbar.title}</h1>
-    </a>
+    </button>
     {#if analysisStatus === 'done'}
       <div class="flex items-center gap-2 ml-4">
         <span class="text-[10px] text-gray-400">Compliance:</span>

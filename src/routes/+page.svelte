@@ -215,6 +215,25 @@
     fitRequested += 1;
   }
 
+  function handleGoHome() {
+    cancelAnalysis();
+    issuesStore.loadIssues([]);
+    viewerStore.set({ currentPage: 1, totalPages: 0, zoom: 1, panX: 0, panY: 0, showAllOverlays: true });
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+      blobUrl = null;
+    }
+    pdfSource = '';
+    documentLoaded = false;
+    pdfLoading = false;
+    uploadError = null;
+    pageCapWarning = null;
+    failedPagesWarning = null;
+    showMetrics = false;
+    showReport = false;
+    showKeyboardHelp = false;
+  }
+
   onDestroy(() => {
     unsubSelectedId();
     if (blobUrl) URL.revokeObjectURL(blobUrl);
@@ -315,7 +334,7 @@
     </div>
   {:else}
     <!-- Document loaded — full viewer UI -->
-    <AppToolbar onFileUpload={handleFileUpload} onResetZoom={handleResetZoom} onRunAnalysis={runAnalysis} onShowMetrics={() => showMetrics = true} onExportReport={() => showReport = true} />
+    <AppToolbar onFileUpload={handleFileUpload} onResetZoom={handleResetZoom} onRunAnalysis={runAnalysis} onShowMetrics={() => showMetrics = true} onExportReport={() => showReport = true} onGoHome={handleGoHome} />
 
     <AnalysisProgress onCancel={cancelAnalysis} />
 
